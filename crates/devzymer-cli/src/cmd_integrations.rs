@@ -44,6 +44,12 @@ fn list(ctx: &Ctx, root: &std::path::Path) -> Result<()> {
         for note in &detection.notes {
             println!("               {note}");
         }
+        if let Some(problem) = &detection.problem {
+            println!("               ✗ {problem}");
+        }
+        if let Some(warning) = &detection.warning {
+            println!("               aviso: {warning}");
+        }
     }
     Ok(())
 }

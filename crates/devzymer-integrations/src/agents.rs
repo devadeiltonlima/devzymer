@@ -120,6 +120,10 @@ pub struct AgentDetection {
     pub config_path: Option<PathBuf>,
     /// Onde o devzymer está registrado, quando está.
     pub registered_at: Option<PathBuf>,
+    /// Algo que impede o agente de iniciar o servidor (o comando gravado não existe).
+    pub problem: Option<String>,
+    /// Algo que pode impedir a conexão, sem que a configuração esteja errada.
+    pub warning: Option<String>,
     pub notes: Vec<String>,
 }
 
@@ -153,6 +157,10 @@ pub fn detect_one(kind: AgentKind, root: &Path) -> AgentDetection {
             kind.executable_name()
         ));
     }
+    let (problem, warning) = match registered_at.as_deref() {
+        Some(path) => registration_health(kind, root, path),
+        None => (None, None),
+    };
     let status = if registered_at.is_some() {
         AgentStatus::Configured
     } else if executable.is_some() {
@@ -166,7 +174,70 @@ pub fn detect_one(kind: AgentKind, root: &Path) -> AgentDetection {
         executable,
         config_path,
         registered_at,
+        problem,
+        warning,
         notes,
+    }
+}
+
+/// Confere se o agente consegue de fato iniciar o servidor registrado.
+///
+/// O registro grava o caminho do executável; se ele foi movido, renomeado ou
+/// apagado, o agente só mostra "connection closed". Aqui o motivo aparece.
+fn registration_health(
+    kind: AgentKind,
+    root: &Path,
+    registered_at: &Path,
+) -> (Option<String>, Option<String>) {
+    let problem = registered_command(kind, registered_at)
+        .filter(|command| !command_resolves(command))
+        .map(|command| {
+            format!(
+                "o comando registrado não existe: {command}; `devzymer integrations repair` o reescreve"
+            )
+        });
+    let warning = if kind == AgentKind::Codex && registered_at.starts_with(root) {
+        (crate::codex::project_trusted(root) == Some(false)).then(|| {
+            "o Codex só lê .codex/config.toml de projetos confiáveis e este não está na lista; "
+                .to_string()
+                + "vale a entrada de ~/.codex/config.toml"
+        })
+    } else {
+        None
+    };
+    (problem, warning)
+}
+
+/// O comando que o agente executa para iniciar o servidor, como está gravado.
+fn registered_command(kind: AgentKind, path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    match kind {
+        AgentKind::Claude => {
+            let document: serde_json::Value = serde_json::from_str(&text).ok()?;
+            document
+                .pointer("/mcpServers/devzymer/command")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        }
+        AgentKind::Codex => {
+            let document: toml_edit::DocumentMut = text.parse().ok()?;
+            document
+                .get("mcp_servers")?
+                .get("devzymer")?
+                .get("command")?
+                .as_str()
+                .map(str::to_string)
+        }
+        AgentKind::OpenCode => None,
+    }
+}
+
+/// True when the registered command points to something that can run.
+fn command_resolves(command: &str) -> bool {
+    if command.contains(['/', '\\']) {
+        Path::new(command).is_file()
+    } else {
+        devzymer_core::workspace::which(command).is_some()
     }
 }
 
@@ -510,5 +581,55 @@ mod tests {
         ] {
             assert!(!status.display().is_empty());
         }
+    }
+
+    fn temp_file(name: &str, content: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("devzymer-agents-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    #[test]
+    fn the_registered_command_is_read_from_claude_and_codex() {
+        let claude = temp_file(
+            "claude-mcp.json",
+            r#"{"mcpServers":{"devzymer":{"type":"stdio","command":"C:\\x\\devzymer.exe"}}}"#,
+        );
+        assert_eq!(
+            registered_command(AgentKind::Claude, &claude).as_deref(),
+            Some("C:\\x\\devzymer.exe")
+        );
+        let codex = temp_file(
+            "codex-config.toml",
+            "[mcp_servers.devzymer]\ncommand = \"devzymer\"\nargs = [\"serve\"]\n",
+        );
+        assert_eq!(
+            registered_command(AgentKind::Codex, &codex).as_deref(),
+            Some("devzymer")
+        );
+        assert_eq!(registered_command(AgentKind::OpenCode, &codex), None);
+    }
+
+    #[test]
+    fn a_registered_command_that_does_not_exist_is_reported() {
+        let missing = std::env::temp_dir()
+            .join("devzymer-nao-existe")
+            .join("devzymer.exe");
+        assert!(!command_resolves(&missing.display().to_string()));
+        let present = temp_file("present-bin", "x");
+        assert!(command_resolves(&present.display().to_string()));
+        assert!(!command_resolves("devzymer-comando-que-nao-existe"));
+    }
+
+    #[test]
+    fn a_registration_with_a_missing_command_is_a_problem() {
+        let broken = temp_file(
+            "broken-mcp.json",
+            r#"{"mcpServers":{"devzymer":{"command":"/nao/existe/devzymer"}}}"#,
+        );
+        let (problem, _) = registration_health(AgentKind::Claude, Path::new("/x"), &broken);
+        assert!(problem.is_some_and(|text| text.contains("/nao/existe/devzymer")));
     }
 }

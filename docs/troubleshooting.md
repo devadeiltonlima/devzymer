@@ -170,6 +170,7 @@ recusa de revisão obsoleta e o limite de workspace. Ambos falam com o binário 
 | A interface não abre com terminal | O terminal não suporta modo cru | Use `--agents`; a escolha é a mesma |
 | O Codex não encontra o servidor | O executável registrado não existe mais | `devzymer integrations repair` |
 | O Codex não lê as regras | O `AGENTS.md` do projeto não foi criado | `devzymer integrations repair` |
+| O agente mostra `Connection closed` para o devzymer | O comando gravado no registro (ou no hook) não existe mais, porque o binário foi movido, renomeado ou atualizado em outro lugar; o Codex só lê `.codex/config.toml` de projetos confiáveis | `devzymer doctor` aponta o comando ausente e a versão do hook; `devzymer integrations repair` regrava o caminho atual. Reinicie o agente depois |
 | O OpenCode não carrega o servidor | `opencode.json` ficou com JSON inválido | `devzymer doctor` e o arquivo; o backup está em `.devzymer/backups/` |
 | As regras do Codex e do OpenCode colidem | Os dois leem `AGENTS.md` no projeto | O bloco é o mesmo e é escrito uma única vez, com marcadores |
 | O agente consulta outro repositório | O servidor foi iniciado fora do projeto | `devzymer doctor` mostra a raiz; use `--root` |

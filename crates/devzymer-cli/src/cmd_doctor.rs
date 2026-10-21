@@ -149,22 +149,40 @@ pub fn run(ctx: &Ctx) -> Result<()> {
     });
 
     for detection in devzymer_integrations::detect(&root) {
-        let status = match detection.status {
+        let mut status = match detection.status {
             devzymer_integrations::AgentStatus::Connected => "ok",
             devzymer_integrations::AgentStatus::Configured => "ok",
             devzymer_integrations::AgentStatus::Detected => "aviso",
             devzymer_integrations::AgentStatus::NotInstalled => "aviso",
         };
-        let detail = match &detection.registered_at {
+        let mut detail = match &detection.registered_at {
             Some(path) => format!("{} em {}", detection.status.display(), path.display()),
             None => detection.status.display().to_string(),
         };
+        if let Some(problem) = &detection.problem {
+            status = "falha";
+            detail = format!("{detail}; {problem}");
+        } else if let Some(warning) = &detection.warning {
+            if status == "ok" {
+                status = "aviso";
+            }
+            detail = format!("{detail}; {warning}");
+        }
         checks.push(Check {
             name: match detection.agent {
                 devzymer_integrations::AgentKind::Claude => "agente:claude",
                 devzymer_integrations::AgentKind::Codex => "agente:codex",
                 devzymer_integrations::AgentKind::OpenCode => "agente:opencode",
             },
+            status,
+            detail,
+        });
+    }
+
+    for command in devzymer_integrations::claude::hook_commands(&root) {
+        let (status, detail) = hook_binary(&command);
+        checks.push(Check {
+            name: "hook",
             status,
             detail,
         });
@@ -284,4 +302,42 @@ pub fn run(ctx: &Ctx) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// Confere o binário que um hook do Claude Code executa: ele precisa existir e
+/// ser da mesma versão, porque um hook antigo não conhece as regras atuais de
+/// roteamento e pode bloquear buscas mesmo sem o servidor MCP ativo.
+fn hook_binary(command: &str) -> (&'static str, String) {
+    let path = std::path::Path::new(command);
+    if !path.is_file() {
+        return (
+            "falha",
+            format!(
+                "o hook roda um binário que não existe: {command}; `devzymer integrations repair` o reescreve"
+            ),
+        );
+    }
+    let current = format!("devzymer {}", env!("CARGO_PKG_VERSION"));
+    if std::env::current_exe().is_ok_and(|exe| exe == path) {
+        return ("ok", format!("{command} ({current})"));
+    }
+    let found = std::process::Command::new(path)
+        .arg("--version")
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|text| !text.is_empty());
+    match found {
+        Some(found) if found == current => ("ok", format!("{command} ({found})")),
+        Some(found) => (
+            "aviso",
+            format!(
+                "o hook roda {found} e o devzymer atual é {current}: {command}; `devzymer integrations repair` o atualiza"
+            ),
+        ),
+        None => (
+            "aviso",
+            format!("não foi possível ler a versão do hook: {command}"),
+        ),
+    }
 }

@@ -217,6 +217,8 @@ mod tests {
             executable: Some(PathBuf::from("agente")),
             config_path: None,
             registered_at: None,
+            problem: None,
+            warning: None,
             notes: Vec::new(),
         }
     }

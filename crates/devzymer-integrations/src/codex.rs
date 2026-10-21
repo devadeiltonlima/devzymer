@@ -91,6 +91,9 @@ pub fn install(
             entry.insert("command", value(executable.display().to_string()));
             entry.insert("args", value(args.clone()));
             entry.insert("enabled", value(true));
+            // O padrão do Codex é 10 s; em um repositório grande o primeiro
+            // arranque do servidor pode passar disso e a conexão cai.
+            entry.insert("startup_timeout_sec", value(30));
         }
     }
 
@@ -140,6 +143,38 @@ pub fn uninstall(root: &Path, scope: InstallScope, report: &mut InstallReport) -
         detail: "servidor MCP 'devzymer' removido do Codex".into(),
     });
     Ok(())
+}
+
+/// Whether Codex trusts the project, so that it reads `.codex/config.toml`.
+///
+/// `None` when the user configuration cannot be read.
+pub fn project_trusted(root: &Path) -> Option<bool> {
+    let text = std::fs::read_to_string(user_config_path()).ok()?;
+    let document: DocumentMut = text.parse().ok()?;
+    let normalize = |value: &str| {
+        value
+            .trim_start_matches(r"\\?\")
+            .replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_lowercase()
+    };
+    let wanted = normalize(
+        &devzymer_core::util::canonical_display(root)
+            .display()
+            .to_string(),
+    );
+    let trusted = document
+        .get("projects")
+        .and_then(|projects| projects.as_table_like())
+        .is_some_and(|projects| {
+            projects.iter().any(|(key, entry)| {
+                let level = entry.get("trust_level").and_then(|level| level.as_str());
+                let key = normalize(key);
+                level == Some("trusted")
+                    && (key == wanted || wanted.starts_with(&format!("{key}\\")))
+            })
+        });
+    Some(trusted)
 }
 
 /// True when the Codex configuration already points to the devzymer server.

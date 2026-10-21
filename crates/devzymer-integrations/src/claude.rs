@@ -496,6 +496,45 @@ fn group_matcher(group: &Value) -> String {
         .to_string()
 }
 
+/// The binaries that the devzymer hooks of Claude Code run, from the user and
+/// project settings.
+pub fn hook_commands(root: &Path) -> Vec<String> {
+    let user = devzymer_core::paths::user_home().join(".claude");
+    let project = root.join(".claude");
+    let mut found: Vec<String> = Vec::new();
+    for file in [
+        user.join("settings.json"),
+        project.join("settings.json"),
+        project.join("settings.local.json"),
+    ] {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let Ok(document) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        let Some(events) = document.get("hooks").and_then(|h| h.as_object()) else {
+            continue;
+        };
+        for group in events.values().filter_map(|list| list.as_array()).flatten() {
+            let handlers = group.get("hooks").and_then(|h| h.as_array());
+            for handler in handlers.into_iter().flatten() {
+                let args_hook = handler
+                    .get("args")
+                    .and_then(|a| a.as_array())
+                    .is_some_and(|args| args.iter().any(|a| a.as_str() == Some("hook")));
+                let command = handler.get("command").and_then(|c| c.as_str());
+                if let Some(command) = command.filter(|_| args_hook) {
+                    if !found.iter().any(|known| known == command) {
+                        found.push(command.to_string());
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
 /// True when a hook group was installed by devzymer, whatever binary path it
 /// points to.
 pub(crate) fn group_is_devzymer(group: &Value) -> bool {

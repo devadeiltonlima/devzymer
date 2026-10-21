@@ -15,6 +15,9 @@
   <b>Menos tokens. Mais engenharia.</b> O agente para de varrer o repositório e passa a perguntar a um índice local onde o código está.
 </p>
 
+> [!WARNING]
+> **Alpha (v0.1.0).** O binário pronto existe só para **Windows x64**; Linux e macOS ainda não têm binário, e o `curl ... | sh` abaixo só funciona quando eles forem publicados (até lá, [compile do código](#instalação)). Foi exercitado de ponta a ponta com o Claude Code; Codex e OpenCode foram testados só com fixtures. Perguntas em linguagem natural ainda erram com frequência (veja [Benchmarks](#benchmarks--86-de-contexto-100-de-acerto-em-dois-conjuntos-de-generalização) e [limitações](docs/limitations.md)). Relatos de falhas são bem-vindos nas [issues](https://github.com/devadeiltonlima/devzymer/issues).
+
 O devzymer indexa o seu repositório localmente e entrega ao agente de código (Claude Code, Codex, OpenCode) **o arquivo, o símbolo e a faixa de linhas exata**, em vez de deixá-lo rodar `grep` e abrir arquivos inteiros.
 
 - **Tudo local.** Parsing com Tree-sitter, índice em SQLite, busca por BM25 (FTS5). Nenhuma chamada de rede, nenhum LLM no caminho de busca.

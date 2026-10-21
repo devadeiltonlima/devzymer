@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-bench"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "devzymer-context",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-context"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -610,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "dirs",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-decisions"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -640,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-graph"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "devzymer-core",
  "regex",
@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-indexer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-integrations"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "devzymer-core",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "devzymer-context",
@@ -702,7 +702,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-search"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -714,7 +714,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossterm",
  "devzymer-core",

@@ -112,6 +112,20 @@ max_workers = 8
 | `allow_files` | `false` | Libera a criação de arquivos de teste dedicados sem aprovação |
 | `approval_marker` | `".devzymer/tests.approved"` | Arquivo que concede aprovação no projeto |
 
+## `[routing]`
+
+Roteamento da busca do agente. Ver [routing.md](routing.md).
+
+| Chave | Padrão | Efeito |
+| --- | --- | --- |
+| `mode` | `"prefer"` | `off`, `prefer` ou `guard` (opt-in) |
+| `telemetry` | `true` | grava eventos agregados em `.devzymer/routing/` |
+| `max_denials_per_session` | `6` | orçamento de redirecionamentos por sessão |
+| `max_advisories_per_session` | `3` | orçamento de dicas por sessão |
+| `health_cache_secs` | `15` | cache da verificação de saúde |
+| `failure_window_secs` | `300` | janela em que uma falha libera a busca nativa |
+| `recent_use_window_secs` | `180` | janela do uso recente do devzymer |
+
 ## Exemplo completo
 
 ```toml

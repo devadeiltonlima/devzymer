@@ -16,7 +16,7 @@
 </p>
 
 > [!WARNING]
-> **Alpha (v0.1.1).** Há binário pronto para **Windows x64** (testado), **Linux x64 e arm64** (compilam e instalam, mas ainda não foram executados em um Linux real) e **nenhum para macOS** (até lá, [compile do código](#instalação)). Foi exercitado de ponta a ponta com o Claude Code; Codex e OpenCode foram testados só com fixtures. Perguntas em linguagem natural ainda erram com frequência (veja [Benchmarks](#benchmarks) e [limitações](docs/limitations.md)). Relatos de falhas são bem-vindos nas [issues](https://github.com/devadeiltonlima/devzymer/issues).
+> **Alpha (v0.1.2).** Há binário pronto para **Windows x64** (testado), **Linux x64 e arm64** (compilam e instalam, mas ainda não foram executados em um Linux real) e **nenhum para macOS** (até lá, [compile do código](#instalação)). Foi exercitado de ponta a ponta com o Claude Code; Codex e OpenCode foram testados só com fixtures. Perguntas em linguagem natural ainda erram com frequência (veja [Benchmarks](#benchmarks) e [limitações](docs/limitations.md)). Relatos de falhas são bem-vindos nas [issues](https://github.com/devadeiltonlima/devzymer/issues).
 
 O devzymer indexa o seu repositório localmente e entrega ao agente de código (Claude Code, Codex, OpenCode) **o arquivo, o símbolo e a faixa de linhas exata**, em vez de deixá-lo rodar `grep` e abrir arquivos inteiros.
 
@@ -119,7 +119,7 @@ tokens: 91009 de contexto | 429632 de linha de base | redução +78.82%
 | **Grafo de chamadas** | Relações `calls` / `imports` / `extends` resolvidas a partir da AST |
 | **Evidência explicada** | Cada candidato carrega o motivo (campo e raridade do termo que casou) |
 | **Honestidade** | Símbolo inexistente → `not_found: true`. Nada de caminho inventado |
-| **Guarda de busca** | O hook nega a varredura do agente **apenas quando o índice sabe responder**, e aponta a ferramenta certa |
+| **Roteamento do agente** | `prefer` (padrão) orienta e mede; `guard`, por opt-in, redireciona **uma vez** a busca que o índice sabe responder. Sempre há saída: índice defasado, MCP fora do ar ou falha do devzymer liberam a busca nativa. Ver [docs/routing.md](docs/routing.md) |
 | **Sempre atual** | Observador de filesystem + reconciliação ao abrir a sessão |
 | **Local-first** | O conteúdo do repositório só sai da máquina com consentimento explícito |
 
@@ -160,6 +160,7 @@ devzymer benchmark --root <dir> --tasks 64 --seed 20260319 --format json
 
 - **[Instalação](docs/installation.md)** e **[CLI](docs/cli.md)**: todos os comandos e flags
 - **[Integração MCP](docs/mcp.md)**: as ferramentas e o contrato de resposta
+- **[Roteamento do agente](docs/routing.md)**: modos, mecanismo por host, fallback e telemetria
 - **[Configuração](docs/configuration.md)**: chaves e ajuste do ranking
 - **[Arquitetura](docs/architecture.md)** · **[Indexação e sincronização](docs/indexing.md)** · **[Linguagens](docs/languages.md)**
 - **[Segurança e privacidade](docs/security.md)** · **[Migração e desinstalação](docs/migration.md)**
@@ -203,7 +204,7 @@ quando necessário. Se o checksum não confere, nada é instalado.
 
 | Variável | Efeito |
 |---|---|
-| `DEVZYMER_VERSION` | versão a instalar, por exemplo `v0.1.1` (padrão: a última) |
+| `DEVZYMER_VERSION` | versão a instalar, por exemplo `v0.1.2` (padrão: a última) |
 | `DEVZYMER_INSTALL_DIR` | pasta de destino |
 | `DEVZYMER_NO_MODIFY_PATH` | `1` para não alterar o `PATH` (só Windows) |
 | `DEVZYMER_REPO` | `devadeiltonlima/devzymer`, para instalar de um fork |
@@ -256,11 +257,11 @@ O `init` já faz isto. Por agente:
 
 | Agente | O que é instalado |
 |---|---|
-| **Claude Code** | servidor MCP (`.mcp.json`), **permissão** das ferramentas `mcp__devzymer__*`, regras (`CLAUDE.md`) e as guardas `hook guard-search` / `guard-test-files` / `post-tool-use` |
-| **Codex** | servidor MCP (`.codex/config.toml`) e regras (`AGENTS.md`) |
-| **OpenCode** | servidor MCP (`opencode.json`) e regras (`AGENTS.md`), preservando comentários do seu `opencode.jsonc` |
+| **Claude Code** | servidor MCP (`.mcp.json`), **permissão** das ferramentas `mcp__devzymer__*`, regras (`CLAUDE.md`) e os hooks `guard-search`, `note-mcp`, `note-prompt`, `guard-test-files` e `post-tool-use` |
+| **Codex** | servidor MCP (`.codex/config.toml`), regras (`AGENTS.md`) e hooks de roteamento (`.codex/hooks.json`, ativos só depois da revisão em `/hooks`) |
+| **OpenCode** | servidor MCP (`opencode.json`), regras (`AGENTS.md`) e o plugin de roteamento (OpenCode 2), preservando comentários do seu `opencode.jsonc` |
 
-Sem a permissão, o Claude Code rejeita cada chamada com `you haven't granted it yet`, e o agente volta a varrer o repositório por conta própria; por isso o instalador a concede no escopo registrado. A guarda `guard-search` nega o `grep`/glob **somente quando o índice sabe responder**.
+Sem a permissão, o Claude Code rejeita cada chamada com `you haven't granted it yet`, e o agente volta a varrer o repositório por conta própria; por isso o instalador a concede no escopo registrado. No modo `guard` (opt-in), o roteamento nega a busca nativa **somente quando o índice sabe responder** e nunca nega a mesma busca duas vezes.
 
 Para remover **apenas o que o devzymer instalou**: `devzymer uninstall` (o índice fica; `--purge` apaga também). Para mexer em um agente só: `devzymer integrations add|remove|repair|verify`.
 
@@ -300,8 +301,11 @@ devzymer sync --full --root .          # reconstrói tudo (use após atualizar o
 devzymer resolve "<símbolo ou pergunta>" --root . --limit 5   # a mesma busca, sem MCP
 devzymer resolve "<termo>" --root . --json
 
+devzymer update                        # atualiza para a última versão publicada (--check só informa)
 devzymer config list --root .          # preferências efetivas, com origem
-devzymer config set context.guard_search false --root .
+devzymer config set routing.mode prefer --root .
+devzymer routing status --root .       # modo, mecanismo por host, saúde e telemetria
+devzymer routing mode guard --root .   # opt-in: redireciona buscas redundantes
 devzymer maintain --root .             # checkpoint do WAL, cache, espaço livre
 devzymer integrations list --root .    # o que está instalado e onde
 devzymer migrate --root . --dry-run    # plano de migração de outras ferramentas
@@ -310,6 +314,40 @@ devzymer serve --root .                # servidor MCP por stdio (os agentes cham
 ```
 
 Todos aceitam `--root <DIR>` (valor obrigatório quando presente), `--json` e `--verbose`. Referência completa em [docs/cli.md](docs/cli.md).
+
+---
+
+## Roteamento do agente
+
+O servidor MCP não garante que o modelo o escolha. O roteamento observa as buscas nativas do
+agente (`Grep`, `Glob`, `rg`, `grep`, `findstr`, `Select-String`, `find`) e decide, com o índice
+na mão, se o devzymer pode responder.
+
+| Modo | Efeito |
+|---|---|
+| `off` | não interfere |
+| `prefer` (padrão) | dica curta, no máximo 3 por sessão, e telemetria; nunca bloqueia |
+| `guard` (opt-in) | redireciona **uma vez** a busca que o índice sabe responder; a repetição passa |
+
+Sempre há saída: servidor MCP fora do ar, índice ausente, defasado, corrompido ou de outro
+workspace, falha recente do devzymer, pedido explícito de busca nativa, logs e saída de
+comandos, e buscas fora do índice liberam a busca nativa. O hook abre o índice somente leitura,
+não altera arquivos e não indexa.
+
+| Host | Mecanismo | Garantia |
+|---|---|---|
+| Claude Code | hooks `PreToolUse`, `PostToolUse` e `UserPromptSubmit` | técnica, no modo `guard` |
+| OpenCode 2 | plugin com `execute.before` | técnica, no modo `guard` |
+| Codex | `.codex/hooks.json` e `AGENTS.md` | os hooks só rodam depois da revisão em `/hooks`; antes disso, só orientação |
+
+**O que foi medido.** Em 36 tarefas reais no Claude Code (haiku), o agente já escolhia o
+devzymer primeiro em 100% dos casos, com ou sem roteamento: não há ganho a mostrar nesse
+modelo. A diferença medida foi nos bloqueios indevidos: a guarda anterior bloqueou 2 de 26
+tarefas (uma sem MCP não concluiu) e a nova, 0. No OpenCode 2, o MCP em Code Mode fazia o
+modelo ignorar o devzymer (0%); com `codemode: false`, que o instalador agora grava, ele
+passou a usá-lo. O Codex não foi medido. Economia de tokens do roteamento não é medida nem
+alegada. Detalhes e limites em [docs/routing.md](docs/routing.md) e
+[docs/limitations.md](docs/limitations.md).
 
 ---
 
@@ -327,7 +365,8 @@ Preferências por seção, no projeto (`.devzymer/config.toml`) ou no escopo do 
 | `search.snippet_max_lines` | 40 | linhas por trecho |
 | `search.bm25_*_weight` | 1,0 | peso por coluna (`name`, `qualified`, `signature`, `doc`, `body`) |
 | `context.cache_enabled` | `true` | cache de resolução entre chamadas |
-| `context.guard_search` | `true` | redireciona a busca do agente para o índice |
+| `routing.mode` | `prefer` | `off`, `prefer` ou `guard` (ver [docs/routing.md](docs/routing.md)) |
+| `context.guard_search` | `false` | legado: `true` equivale a pedir `routing.mode = guard` |
 | `context.max_output_tokens` | 4000 | teto de saída de uma ferramenta |
 | `privacy.allow_remote_source` | `false` | permite enviar conteúdo do repositório a provedores externos |
 

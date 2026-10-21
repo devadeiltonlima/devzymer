@@ -6,9 +6,12 @@ mod cmd_init;
 mod cmd_integrations;
 mod cmd_maintain;
 mod cmd_migrate;
+mod cmd_routing;
 mod cmd_serve;
 mod cmd_status;
+mod cmd_update;
 mod cmd_watch;
+mod routing_hook;
 
 use std::path::{Path, PathBuf};
 
@@ -39,7 +42,7 @@ struct Cli {
     verbose: bool,
 
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -158,6 +161,23 @@ enum Command {
         #[command(subcommand)]
         kind: HookKind,
     },
+    /// Atualiza o devzymer para a última versão publicada.
+    Update {
+        /// Apenas informa se há versão nova, sem instalar.
+        #[arg(long)]
+        check: bool,
+        /// Instala uma versão específica, por exemplo v0.1.2.
+        #[arg(long, value_name = "VERSAO")]
+        version: Option<String>,
+        /// Atualiza mesmo que o executável pareça uma compilação local.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Mostra e ajusta o roteamento do agente para o devzymer.
+    Routing {
+        #[command(subcommand)]
+        action: RoutingAction,
+    },
     /// Resolve uma consulta no índice, sem MCP.
     Resolve {
         /// Texto da consulta.
@@ -223,13 +243,63 @@ enum ConfigAction {
 }
 
 #[derive(Subcommand)]
+enum RoutingAction {
+    /// Modo, mecanismo de cada host, saúde do índice e resumo recente.
+    Status,
+    /// Mostra ou altera o modo: off, prefer ou guard.
+    Mode {
+        /// Novo modo. Sem valor, mostra o atual.
+        value: Option<String>,
+    },
+    /// Simula a decisão do roteamento para uma chamada de ferramenta, sem registrar nada.
+    Explain {
+        /// Nome da ferramenta, por exemplo Grep, Glob, Read, Bash ou shell.
+        #[arg(long)]
+        tool: String,
+        /// Entrada da ferramenta em JSON.
+        #[arg(long)]
+        input: String,
+        /// Host: claude, codex ou opencode.
+        #[arg(long)]
+        host: Option<String>,
+        /// Força um modo na simulação.
+        #[arg(long)]
+        mode: Option<String>,
+    },
+    /// Resumo agregado de telemetria.
+    Stats {
+        /// Janela em dias.
+        #[arg(long, default_value_t = 7)]
+        days: u64,
+    },
+    /// Apaga telemetria, sessões e cache de saúde do roteamento.
+    Reset,
+}
+
+#[derive(Subcommand)]
 enum HookKind {
     /// Comprime a saída de ferramentas grandes.
     PostToolUse,
     /// Impede a criação de arquivos de teste sem aprovação.
     GuardTestFiles,
-    /// Redireciona a busca de codigo do agente para o indice local.
-    GuardSearch,
+    /// Orienta (ou, no modo guard, redireciona) a busca de codigo do agente.
+    GuardSearch {
+        /// Host que chamou o hook: claude, codex ou opencode.
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
+    },
+    /// Registra o resultado de uma chamada ao devzymer, para o roteamento.
+    NoteMcp {
+        /// Host que chamou o hook: claude, codex ou opencode.
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
+    },
+    /// Registra que o usuario pediu busca nativa explicitamente.
+    NotePrompt {
+        /// Host que chamou o hook: claude, codex ou opencode.
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
+    },
 }
 
 struct Ctx {
@@ -263,6 +333,14 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    let command = match cli.command {
+        Some(command) => command,
+        None => return home(),
+    };
+    let command = match command {
+        Command::Hook { kind } => return cmd_hook::run(kind),
+        other => other,
+    };
     let cwd = devzymer_core::paths::current_dir();
     let policy = devzymer_core::workspace_root::Policy::explicit();
     let root = match devzymer_core::workspace_root::resolve(cli.root.as_deref(), &cwd, policy) {
@@ -270,7 +348,7 @@ fn run() -> Result<()> {
         Err(error) => {
             // `init` is the command that creates a workspace, so it may run
             // where no workspace exists yet. Every other command needs one.
-            if !matches!(cli.command, Command::Init { .. }) {
+            if !matches!(command, Command::Init { .. } | Command::Update { .. }) {
                 return Err(anyhow::Error::new(error));
             }
             match cli.root.as_deref() {
@@ -294,7 +372,7 @@ fn run() -> Result<()> {
 
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async move {
-        match cli.command {
+        match command {
             Command::Init {
                 full,
                 no_integrate,
@@ -342,9 +420,54 @@ fn run() -> Result<()> {
             Command::Serve { root: serve_root } => cmd_serve::run(serve_root.as_deref()).await,
             Command::Watch => cmd_watch::run(&ctx).await,
             Command::Hook { kind } => cmd_hook::run(kind),
+            Command::Routing { action } => cmd_routing::run(&ctx, action),
+            Command::Update {
+                check,
+                version,
+                force,
+            } => {
+                cmd_update::run(
+                    &ctx,
+                    cmd_update::UpdateOptions {
+                        check,
+                        version,
+                        force,
+                    },
+                )
+                .await
+            }
             Command::Resolve { query, limit } => cmd_resolve(&ctx, &query, limit),
         }
     })
+}
+
+fn home() -> Result<()> {
+    use clap::CommandFactory;
+
+    let caps = devzymer_tui::brand::detect();
+    if !caps.color {
+        Cli::command().print_help()?;
+        return Ok(());
+    }
+    let version = env!("CARGO_PKG_VERSION");
+    devzymer_tui::brand::print_banner(&caps, true, version)?;
+    devzymer_tui::brand::heading(&caps, "Comece por aqui")?;
+    let entries = [
+        (
+            "devzymer init",
+            "indexa o projeto e conecta os seus agentes",
+        ),
+        ("devzymer status", "cobertura, atualidade e integração"),
+        ("devzymer doctor", "diagnóstico completo"),
+        ("devzymer resolve \"...\"", "busca no índice, sem MCP"),
+        ("devzymer update", "atualiza o devzymer"),
+        ("devzymer --help", "todos os comandos"),
+    ];
+    for (command, detail) in entries {
+        devzymer_tui::brand::line(&caps, devzymer_tui::brand::Mark::Info, command, detail)?;
+    }
+    println!();
+    Ok(())
 }
 
 async fn cmd_sync(ctx: &Ctx, full: bool, no_graph: bool) -> Result<()> {

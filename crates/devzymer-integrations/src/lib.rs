@@ -7,6 +7,7 @@ pub mod codex;
 pub mod jsonc;
 pub mod migrate;
 pub mod opencode;
+pub mod routing;
 
 pub use agents::{
     detect, detect_one, install, probe_server, uninstall_agent, AgentDetection, AgentKind,

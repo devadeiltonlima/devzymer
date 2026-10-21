@@ -77,6 +77,22 @@ devzymer config set tests.allow_files true
 touch .devzymer/tests.approved
 ```
 
+## Hooks de roteamento
+
+Os hooks e o plugin de roteamento rodam a cada chamada de ferramenta do agente, então a
+superfície é pequena e fechada:
+
+- Não alteram arquivos-fonte e **abrem o índice somente leitura** (`SQLITE_OPEN_READ_ONLY`): não
+  criam, migram, adotam identidade nem reparam. Nunca disparam indexação.
+- Só agem em um workspace que já tem `.devzymer/`, achado subindo a partir do diretório da
+  chamada e parando antes da home. Fora dele, não fazem nada.
+- Não leem o corpo de arquivos. Classificam o comando ou o padrão, consultam o índice por nome e
+  descartam o texto.
+- Qualquer erro interno resulta em permitir: um hook com defeito não bloqueia o trabalho.
+- A telemetria (`.devzymer/routing/events.jsonl`) guarda só contagens e categorias; nunca prompt,
+  comando, padrão de busca, código ou credencial. A sessão é um hash de 12 hex.
+- O estado de sessão tem orçamento: no máximo uma negação por busca e 6 por sessão.
+
 ## Compressão de saída de ferramentas
 
 O hook `post-tool-use` comprime a saída grande do Bash. A compressão é determinística e

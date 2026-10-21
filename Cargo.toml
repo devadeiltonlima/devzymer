@@ -11,11 +11,12 @@ members = [
     "crates/devzymer-integrations",
     "crates/devzymer-tui",
     "crates/devzymer-bench",
+    "crates/devzymer-routing",
     "crates/devzymer-cli",
 ]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
@@ -32,6 +33,7 @@ devzymer-mcp = { path = "crates/devzymer-mcp" }
 devzymer-integrations = { path = "crates/devzymer-integrations" }
 devzymer-tui = { path = "crates/devzymer-tui" }
 devzymer-bench = { path = "crates/devzymer-bench" }
+devzymer-routing = { path = "crates/devzymer-routing" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

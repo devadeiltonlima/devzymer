@@ -8,8 +8,11 @@ use devzymer_graph::build_graph;
 use devzymer_indexer::index::{IndexOptions, Indexer};
 use devzymer_indexer::scan::ScanOptions;
 use devzymer_integrations::{AgentKind, AgentOutcome, InstallScope};
+use devzymer_tui::brand::{self, Caps, Mark, Task};
 
 use crate::Ctx;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// As opções do comando de inicialização.
 pub struct InitOptions {
@@ -91,6 +94,15 @@ pub async fn run(ctx: &Ctx, options: InitOptions) -> Result<()> {
         return Ok(());
     }
 
+    let caps = brand::detect();
+    let fancy = caps.color && !ctx.json;
+    let interactive = devzymer_tui::is_interactive()
+        || std::env::var("DEVZYMER_FORCE_TUI").is_ok_and(|value| !value.is_empty());
+    let uses_selection_screen = agents.is_none() && !yes && !no_integrate && interactive;
+    if fancy && !uses_selection_screen {
+        brand::print_banner(&caps, true, VERSION)?;
+    }
+
     let scope = resolve_scope(ctx, scope.as_deref())?;
     let selected = resolve_agents(
         ctx,
@@ -101,6 +113,19 @@ pub async fn run(ctx: &Ctx, options: InitOptions) -> Result<()> {
         scope,
     )?;
 
+    if fancy {
+        if uses_selection_screen {
+            brand::print_banner(&caps, false, VERSION)?;
+        }
+        brand::heading(&caps, "Preparando o seu projeto")?;
+        let languages = if workspace.languages.is_empty() {
+            "nenhuma linguagem reconhecida".to_string()
+        } else {
+            workspace.languages.join(", ")
+        };
+        brand::line(&caps, Mark::Ok, "Ambiente detectado", &languages)?;
+    }
+
     let db_path = paths::db_path(&root);
     let store = Store::open(&db_path)?;
     let indexer = Indexer::new(&store, &root);
@@ -110,24 +135,65 @@ pub async fn run(ctx: &Ctx, options: InitOptions) -> Result<()> {
         force_full: full,
         chunk_size: 256,
     };
-    let index_report = indexer.index(&options)?;
+    let index_report = timed(
+        &caps,
+        fancy,
+        "Indexando o repositório",
+        || indexer.index(&options).map_err(anyhow::Error::from),
+        |report| {
+            format!(
+                "{} arquivos · {} símbolos",
+                report.files_indexed + report.files_unchanged,
+                report.symbols
+            )
+        },
+    )?;
 
-    let graph_report = build_graph(&store)?;
+    let graph_report = timed(
+        &caps,
+        fancy,
+        "Montando o grafo de chamadas",
+        || build_graph(&store).map_err(anyhow::Error::from),
+        |graph| format!("{} relações", graph.relations),
+    )?;
 
     let executable = std::env::current_exe()?;
     let mut outcomes: Vec<AgentOutcome> = Vec::new();
     if !no_integrate && !selected.is_empty() {
-        if !ctx.json {
+        if !ctx.json && !fancy {
             println!("Instalando o devzymer...");
             println!("[✓] Índice do repositório verificado");
         }
         for agent in &selected {
-            let outcome = install_one(ctx, &root, *agent, scope, &executable, server_only)?;
+            let task =
+                fancy.then(|| Task::start(&caps, &format!("Integrando {}", agent.display())));
+            let outcome = install_one(ctx, &root, *agent, scope, &executable, server_only, fancy)?;
+            if let Some(task) = task {
+                if outcome.ok {
+                    task.finish(&outcome.detail);
+                } else {
+                    task.fail(&outcome.detail);
+                }
+            }
             outcomes.push(outcome);
         }
     }
 
+    let verifying = fancy.then(|| Task::start(&caps, "Verificando a instalação"));
     let verification = verify(&root, &ctx.config).await?;
+    if let Some(task) = verifying {
+        let detail = format!(
+            "busca {} · banco {} · mcp {}",
+            verdict(verification.search_ok),
+            verdict(verification.database_ok),
+            verdict(verification.mcp_ok)
+        );
+        if verification.search_ok && verification.database_ok && verification.mcp_ok {
+            task.finish(&detail);
+        } else {
+            task.fail(&detail);
+        }
+    }
 
     let payload = serde_json::json!({
         "root": root.display().to_string(),
@@ -140,6 +206,15 @@ pub async fn run(ctx: &Ctx, options: InitOptions) -> Result<()> {
 
     if ctx.json {
         println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    if fancy {
+        let healthy = verification.search_ok
+            && verification.database_ok
+            && verification.mcp_ok
+            && outcomes.iter().all(|outcome| outcome.ok);
+        print_summary(&caps, &index_report, &outcomes, healthy)?;
         return Ok(());
     }
 
@@ -180,6 +255,79 @@ pub async fn run(ctx: &Ctx, options: InitOptions) -> Result<()> {
     Ok(())
 }
 
+fn timed<T>(
+    caps: &Caps,
+    fancy: bool,
+    label: &str,
+    work: impl FnOnce() -> Result<T>,
+    detail: impl FnOnce(&T) -> String,
+) -> Result<T> {
+    if !fancy {
+        return work();
+    }
+    let task = Task::start(caps, label);
+    match work() {
+        Ok(value) => {
+            task.finish(&detail(&value));
+            Ok(value)
+        }
+        Err(error) => {
+            task.fail(&error.to_string());
+            Err(error)
+        }
+    }
+}
+
+fn verdict(ok: bool) -> &'static str {
+    if ok {
+        "ok"
+    } else {
+        "falhou"
+    }
+}
+
+fn print_summary(
+    caps: &Caps,
+    index_report: &devzymer_indexer::index::IndexReport,
+    outcomes: &[AgentOutcome],
+    healthy: bool,
+) -> Result<()> {
+    for outcome in outcomes.iter().filter(|outcome| !outcome.ok) {
+        for change in &outcome.changes {
+            println!("      {} -> {}", change.file, change.detail);
+        }
+    }
+    if !index_report.errors.is_empty() {
+        brand::line(
+            caps,
+            Mark::Warn,
+            "Arquivos com erro de leitura",
+            &format!("{} (mostrando até 3)", index_report.errors.len()),
+        )?;
+        for error in index_report.errors.iter().take(3) {
+            println!("      {error}");
+        }
+    }
+    println!();
+    if !healthy {
+        brand::line(
+            caps,
+            Mark::Warn,
+            "Instalado com avisos",
+            "rode `devzymer doctor` para ver o que falhou",
+        )?;
+        println!();
+        return Ok(());
+    }
+    brand::heading(caps, "Tudo pronto. O devzymer está ativo neste projeto.")?;
+    println!("  Próximos passos");
+    println!("    1. Abra o seu agente neste projeto (Claude Code, Codex ou OpenCode)");
+    println!("    2. Peça algo como: \"encontre onde a sessão do usuário é validada\"");
+    println!("    3. Confira o estado quando quiser: devzymer status");
+    println!();
+    Ok(())
+}
+
 /// Instala um agente e devolve o resultado, com a falha isolada.
 fn install_one(
     ctx: &Ctx,
@@ -188,6 +336,7 @@ fn install_one(
     scope: InstallScope,
     executable: &Path,
     server_only: bool,
+    quiet: bool,
 ) -> Result<AgentOutcome> {
     let outcome = devzymer_integrations::install(
         root,
@@ -207,7 +356,7 @@ fn install_one(
         detail: "nenhum resultado".to_string(),
         changes: Vec::new(),
     });
-    if !ctx.json {
+    if !ctx.json && !quiet {
         println!(
             "[{}] {}",
             if outcome.ok { "✓" } else { "✗" },

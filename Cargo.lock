@@ -186,6 +186,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-buffer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "bstr"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -345,6 +354,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ebdda89edc534bf8d5dd2857562633b6495557e5846552ade994b99ed13c36a"
 
 [[package]]
+name = "const-oid"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
 name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -439,6 +454,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "crypto-common"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
+dependencies = [
+ "hybrid-array",
 ]
 
 [[package]]
@@ -557,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "devzymer-context",
@@ -572,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -584,11 +608,15 @@ dependencies = [
  "devzymer-indexer",
  "devzymer-integrations",
  "devzymer-mcp",
+ "devzymer-routing",
  "devzymer-search",
  "devzymer-tui",
+ "flate2",
  "notify",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "toml",
  "tracing",
@@ -597,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-context"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -610,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "dirs",
@@ -626,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-decisions"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -640,7 +668,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-graph"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "devzymer-core",
  "regex",
@@ -651,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-indexer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -673,7 +701,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-integrations"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "devzymer-core",
@@ -685,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "devzymer-context",
@@ -693,6 +721,7 @@ dependencies = [
  "devzymer-decisions",
  "devzymer-graph",
  "devzymer-indexer",
+ "devzymer-routing",
  "devzymer-search",
  "serde",
  "serde_json",
@@ -701,8 +730,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "devzymer-routing"
+version = "0.1.2"
+dependencies = [
+ "blake3",
+ "devzymer-core",
+ "devzymer-indexer",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "devzymer-search"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "devzymer-core",
@@ -714,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "devzymer-tui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crossterm",
  "devzymer-core",
@@ -722,6 +762,17 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
+dependencies = [
+ "block-buffer",
+ "const-oid",
+ "crypto-common",
 ]
 
 [[package]]
@@ -1023,6 +1074,15 @@ name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
+name = "hybrid-array"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
+dependencies = [
+ "typenum",
+]
 
 [[package]]
 name = "hyper"
@@ -2201,6 +2261,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2744,6 +2815,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "typenum"
+version = "1.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "unicode-ident"

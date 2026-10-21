@@ -1,5 +1,7 @@
 //! Interface de terminal interativa do instalador do devzymer.
 
+mod banner_art;
+pub mod brand;
 pub mod state;
 pub mod ui;
 
@@ -102,9 +104,12 @@ fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     selection: &mut Selection,
 ) -> io::Result<Outcome> {
+    let caps = brand::detect();
+    let mut tick: u64 = 0;
     loop {
-        terminal.draw(|frame| ui::render(frame, selection))?;
-        if !event::poll(Duration::from_millis(200))? {
+        terminal.draw(|frame| ui::render_animated(frame, selection, tick, &caps))?;
+        tick = tick.wrapping_add(1);
+        if !event::poll(Duration::from_millis(70))? {
             continue;
         }
         let Event::Key(key) = event::read()? else {

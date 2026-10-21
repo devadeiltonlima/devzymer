@@ -49,7 +49,7 @@ pub fn tool_definitions() -> Vec<Value> {
     vec![
         json!({
             "name": "context_resolve",
-            "description": "TRIGGER: use this BEFORE grep, glob, codegraph_explore or reading a whole file, whenever the request names a function, class, method, hook, variable or file, or asks where something is defined, located, implemented or lives. Locates symbols, files and exact source line ranges in the locally indexed repository. Accepts a symbol name, a qualified name, a file name or a path. Returns the path, the symbol and the line range, without scanning the repository.",
+            "description": "Locate where a symbol, file or behavior lives in the indexed repository. Accepts a symbol name, qualified name, file name, path or short natural-language description, and returns ranked candidates (path, symbol, line range) without scanning the repository. Partial matches rank lower, and an `ambiguidade:` reply asks for a qualified name. A ranked hit is a lead, not proof: confirm it with context_read. `nao_encontrado:` means not indexed or not matched, not proven absent; use native search then, and for logs, command output or content newer than the index.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -64,7 +64,7 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "context_read",
-            "description": "TRIGGER: use this to read code once context_resolve located it, instead of reading the whole file. Reads a precise source range from a file, by line range or by symbol name.",
+            "description": "Read a line range or a named symbol from an indexed file, numbered, with the sha that context_patch requires. Use it after context_resolve instead of reading the whole file. A `| truncado |` header means the excerpt stopped at max_bytes: continue from the stated line. Read a whole file natively only when you need to edit it with a native editor.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -80,7 +80,7 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "context_impact",
-            "description": "TRIGGER: use this BEFORE changing shared code, to find callers, dependencies and the blast radius of a symbol or file.",
+            "description": "List callers, dependents and the blast radius of a symbol or file, before changing shared code. Each edge is labeled confirmed (static rule), heuristic (name match) or unresolved (target unknown). The label rates the link, not the correctness of the code, and dynamic dispatch can leave the graph partial: verify important edges with context_read.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -92,7 +92,7 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "context_patch",
-            "description": "TRIGGER: use this to apply a small change to an existing file, instead of rewriting the whole file. Requires the expected_sha returned by context_read; the edit is rejected when the file changed, when the range is outside the excerpt that was read, or when it would replace the whole file. Writes atomically.",
+            "description": "Apply a small change to an existing file without rewriting it. Requires the expected_sha returned by context_read. The edit is rejected when the file changed, when the range is outside the excerpt that was read, or when it would replace the whole file. Writes atomically.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -110,12 +110,12 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "context_status",
-            "description": "Report index freshness, coverage, watcher state, pending changes, skipped files and indexing failures.",
+            "description": "Report index freshness, coverage, watcher state, pending changes, skipped files and indexing failures. Call it when a result looks stale or before trusting the index in a new workspace; it is not needed before every lookup.",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
             "name": "context_sync",
-            "description": "TRIGGER: call this after creating, renaming or deleting files, and when a lookup fails or returns a stale location. Synchronizes the local index with the files on disk.",
+            "description": "Synchronize the local index with the files on disk. Call it after creating, renaming or deleting files, or when a lookup returns a stale location.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

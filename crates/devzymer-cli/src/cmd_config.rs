@@ -78,7 +78,7 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> Result<()> {
     }
 }
 
-fn lookup(config: &Config, key: &str) -> Option<String> {
+pub(crate) fn lookup(config: &Config, key: &str) -> Option<String> {
     let value: String = match key {
         "index.max_file_size_bytes" => config.index.max_file_size_bytes.to_string(),
         "index.follow_symlinks" => config.index.follow_symlinks.to_string(),
@@ -109,12 +109,22 @@ fn lookup(config: &Config, key: &str) -> Option<String> {
         "logging.level" => config.logging.level.clone(),
         "tests.allow_files" => config.tests.allow_files.to_string(),
         "tests.approval_marker" => config.tests.approval_marker.clone(),
+        "context.guard_search" => config.context.guard_search.to_string(),
+        "routing.mode" => config.routing_mode().0.as_str().to_string(),
+        "routing.telemetry" => config.routing.telemetry.to_string(),
+        "routing.max_denials_per_session" => config.routing.max_denials_per_session.to_string(),
+        "routing.max_advisories_per_session" => {
+            config.routing.max_advisories_per_session.to_string()
+        }
+        "routing.health_cache_secs" => config.routing.health_cache_secs.to_string(),
+        "routing.failure_window_secs" => config.routing.failure_window_secs.to_string(),
+        "routing.recent_use_window_secs" => config.routing.recent_use_window_secs.to_string(),
         _ => return None,
     };
     Some(value)
 }
 
-fn apply(config: &mut Config, key: &str, value: &str) -> Result<()> {
+pub(crate) fn apply(config: &mut Config, key: &str, value: &str) -> Result<()> {
     let parse_bool = |v: &str| -> Result<bool> {
         match v.to_ascii_lowercase().as_str() {
             "true" | "1" | "sim" | "yes" => Ok(true),
@@ -165,6 +175,30 @@ fn apply(config: &mut Config, key: &str, value: &str) -> Result<()> {
         "logging.level" => config.logging.level = value.to_string(),
         "tests.allow_files" => config.tests.allow_files = parse_bool(value)?,
         "tests.approval_marker" => config.tests.approval_marker = value.to_string(),
+        "context.guard_search" => config.context.guard_search = parse_bool(value)?,
+        "routing.mode" => {
+            config.routing.mode = Some(
+                devzymer_core::config::RoutingMode::parse(value).ok_or_else(|| {
+                    anyhow::anyhow!("modo inválido: {value}; use off, prefer ou guard")
+                })?,
+            )
+        }
+        "routing.telemetry" => config.routing.telemetry = parse_bool(value)?,
+        "routing.max_denials_per_session" => {
+            config.routing.max_denials_per_session = parse_usize(value)? as u32
+        }
+        "routing.max_advisories_per_session" => {
+            config.routing.max_advisories_per_session = parse_usize(value)? as u32
+        }
+        "routing.health_cache_secs" => {
+            config.routing.health_cache_secs = parse_usize(value)? as u64
+        }
+        "routing.failure_window_secs" => {
+            config.routing.failure_window_secs = parse_usize(value)? as u64
+        }
+        "routing.recent_use_window_secs" => {
+            config.routing.recent_use_window_secs = parse_usize(value)? as u64
+        }
         other => bail!("chave desconhecida: {other}"),
     }
     Ok(())

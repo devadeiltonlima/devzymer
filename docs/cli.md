@@ -234,13 +234,31 @@ devzymer watch
 
 ## `devzymer hook`
 
-Executa um manipulador de hook do Claude Code. Lê JSON do `stdin` e escreve JSON no `stdout`.
-Não é um comando de uso direto: o Claude Code o invoca.
+Executa um manipulador de hook (Claude Code, Codex ou plugin do OpenCode). Lê JSON do `stdin` e
+escreve JSON no `stdout`. Não é um comando de uso direto: o host o invoca. Fora de um workspace
+com `.devzymer/`, nunca faz nada.
 
 ```bash
 devzymer hook post-tool-use      # comprime saída grande de ferramenta
 devzymer hook guard-test-files   # bloqueia criação de arquivos de teste sem aprovação
+devzymer hook guard-search --host claude|codex|opencode   # roteamento da busca
+devzymer hook note-mcp --host ...         # registra o resultado de uma chamada ao devzymer
+devzymer hook note-prompt --host ...      # registra um pedido explícito de busca nativa
 ```
+
+---
+
+## `devzymer routing`
+
+```bash
+devzymer routing status [--json]     # modo, mecanismo por host, saúde do índice, resumo de 7 dias
+devzymer routing mode [off|prefer|guard]
+devzymer routing explain --tool <T> --input '<json>' [--host H] [--mode M]   # simulação, sem registro
+devzymer routing stats [--days N] [--json]
+devzymer routing reset               # apaga telemetria, sessões e cache de saúde
+```
+
+Ver [routing.md](routing.md).
 
 ---
 

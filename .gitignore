@@ -45,3 +45,6 @@ Cargo.lock.orig
 /.mcp.json
 /.claude/
 /.codex/
+
+__pycache__/
+*.pyc

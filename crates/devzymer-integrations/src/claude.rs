@@ -217,7 +217,7 @@ fn install_mcp_entry(
 /// Applies a change to a JSON file that another process may be writing, such
 /// as `~/.claude.json`. The file is re-read and the change re-applied when the
 /// content changed in the meantime, so a concurrent write is not lost.
-fn update_json_file<F>(path: &Path, mut mutator: F) -> Result<bool>
+pub(crate) fn update_json_file<F>(path: &Path, mut mutator: F) -> Result<bool>
 where
     F: FnMut(&mut Value) -> bool,
 {
@@ -314,11 +314,28 @@ fn install_hooks(
         }]
     });
     let guard_search = json!({
-        "matcher": "Grep|Glob|Read",
+        "matcher": "Grep|Glob|Read|Bash|PowerShell",
         "hooks": [{
             "type": "command",
             "command": executable.display().to_string(),
-            "args": ["hook", "guard-search"],
+            "args": ["hook", "guard-search", "--host", "claude"],
+            "timeout": 10
+        }]
+    });
+    let note_mcp = json!({
+        "matcher": "mcp__devzymer__.*",
+        "hooks": [{
+            "type": "command",
+            "command": executable.display().to_string(),
+            "args": ["hook", "note-mcp", "--host", "claude"],
+            "timeout": 10
+        }]
+    });
+    let note_prompt = json!({
+        "hooks": [{
+            "type": "command",
+            "command": executable.display().to_string(),
+            "args": ["hook", "note-prompt", "--host", "claude"],
             "timeout": 10
         }]
     });
@@ -330,9 +347,14 @@ fn install_hooks(
         else {
             return false;
         };
-        merge_hook_group(hooks, "PostToolUse", &post_use)
+        let migrated = drop_devzymer_groups(hooks, "PreToolUse", "guard-search");
+        migrated
+            | merge_hook_group(hooks, "PostToolUse", &post_use)
             | merge_hook_group(hooks, "PreToolUse", &pre_use)
             | merge_hook_group(hooks, "PreToolUse", &guard_search)
+            | merge_hook_group(hooks, "PostToolUse", &note_mcp)
+            | merge_hook_group(hooks, "PostToolUseFailure", &note_mcp)
+            | merge_hook_group(hooks, "UserPromptSubmit", &note_prompt)
     })?;
 
     if !changed {
@@ -348,7 +370,8 @@ fn install_hooks(
     report.changes.push(Change {
         file: target.display().to_string(),
         action: "updated".into(),
-        detail: "hooks de compressão de saída e de guarda de arquivos de teste instalados".into(),
+        detail: "hooks de compressão de saída, guarda de arquivos de teste e roteamento instalados"
+            .into(),
     });
     Ok(())
 }
@@ -408,6 +431,42 @@ fn merge_hook_group(hooks: &mut Value, event: &str, group: &Value) -> bool {
     true
 }
 
+/// Drops the devzymer groups of an event that run the given hook, so a group
+/// installed by an older version does not fire next to the current one.
+fn drop_devzymer_groups(hooks: &mut Value, event: &str, hook: &str) -> bool {
+    let Some(list) = hooks.get_mut(event).and_then(|l| l.as_array_mut()) else {
+        return false;
+    };
+    let before = list.len();
+    list.retain(|group| !(group_is_devzymer(group) && group_runs(group, hook)));
+    before != list.len()
+}
+
+/// True when a hook group runs the given devzymer hook.
+pub(crate) fn group_runs(group: &Value, hook: &str) -> bool {
+    group
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .map(|handlers| {
+            handlers.iter().any(|handler| {
+                let in_args = handler
+                    .get("args")
+                    .and_then(|a| a.as_array())
+                    .map(|args| args.iter().any(|a| a.as_str() == Some(hook)))
+                    .unwrap_or(false);
+                let in_command = ["command", "commandWindows"].iter().any(|key| {
+                    handler
+                        .get(*key)
+                        .and_then(|c| c.as_str())
+                        .map(|c| c.contains(&format!("hook {hook}")))
+                        .unwrap_or(false)
+                });
+                in_args || in_command
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// The matcher of a hook group.
 fn group_matcher(group: &Value) -> String {
     group
@@ -419,7 +478,7 @@ fn group_matcher(group: &Value) -> String {
 
 /// True when a hook group was installed by devzymer, whatever binary path it
 /// points to.
-fn group_is_devzymer(group: &Value) -> bool {
+pub(crate) fn group_is_devzymer(group: &Value) -> bool {
     group
         .get("hooks")
         .and_then(|h| h.as_array())
@@ -683,7 +742,12 @@ fn remove_hooks(settings_dir: &Path, root: &Path, report: &mut InstallReport) ->
         let Some(hooks) = document.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
             return false;
         };
-        for event in ["PostToolUse", "PreToolUse"] {
+        for event in [
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PreToolUse",
+            "UserPromptSubmit",
+        ] {
             let Some(list) = hooks.get_mut(event).and_then(|l| l.as_array_mut()) else {
                 continue;
             };
@@ -777,40 +841,39 @@ pub(crate) fn backup_file(root: &Path, target: &Path, report: &mut InstallReport
     Ok(())
 }
 
-/// Agent rules installed into the project instructions file.
-///
-/// The rules claim priority over any other code search tool of the project,
-/// because the index answers with the exact path, symbol and line range while
-/// the other tools scan the repository.
-pub fn rules_block() -> String {
+/// The sentence every instructions file carries, verbatim.
+pub const ROUTING_POLICY: &str = "Use devzymer MCP as the first retrieval tool for locating repository files, symbols, dependencies and implementation behavior. Use native search when devzymer is unavailable, stale, incomplete, or when native search is more appropriate.";
+
+fn rules_with(tool_note: &str) -> String {
     format!(
         "{RULES_START}
 ## devzymer
 
-Este repositório está indexado localmente pelo devzymer. Estas regras têm prioridade
-sobre qualquer outra ferramenta de busca de código do projeto.
+Este repositório está indexado localmente pelo devzymer.
 
-1. Antes de usar `grep`, `glob`, `Read` de arquivo inteiro, `codegraph_explore` ou
-   qualquer outra ferramenta de busca, use `context_resolve`. Ele devolve o caminho,
-   o símbolo e a faixa de linhas exata, sem varrer o repositório.
-2. Depois de `context_resolve`, leia apenas a faixa devolvida, com `context_read` por
-   símbolo ou por linhas. Não leia o arquivo inteiro.
-3. Use `context_impact` antes de alterar código compartilhado, para ver quem depende
+{ROUTING_POLICY}
+
+1. Para localizar arquivo, símbolo, dependência ou comportamento, comece por
+   `context_resolve`{tool_note}: ele devolve caminho, símbolo e faixa de linhas sem
+   varrer o repositório. Depois leia só a faixa, com `context_read`.
+2. Use `context_impact` antes de alterar código compartilhado, para ver quem depende
    dele.
-4. Use `context_patch` para alterações mínimas, com verificação de revisão. A edição é
-   rejeitada se o arquivo mudou desde a leitura.
-5. Depois de criar, renomear ou apagar arquivos, chame `context_sync` para atualizar
-   o índice.
-6. Uma resposta com `ambiguidade:` significa que o nome tem mais de uma definição:
-   use o nome qualificado (`Classe.metodo`) para desambiguar.
-7. Evite releitura do mesmo trecho e explicações repetidas.
-8. Use `context_decide` apenas quando as regras determinísticas não forem suficientes.
-9. Preserve a correção do código: economia de tokens nunca justifica alterar o
-   comportamento.
-10. Responda de forma concisa em português do Brasil, e explique bloqueios de forma
-    direta e precisa.
+3. Use `context_patch` para alterações mínimas. Envie o `expected_sha` da leitura; a
+   edição é rejeitada se o arquivo mudou ou se o intervalo não estiver no trecho lido.
+4. Depois de criar, renomear ou apagar arquivos, chame `context_sync`.
+5. `nao_encontrado:` não prova ausência: confirme com busca nativa. `ambiguidade:`
+   pede o nome qualificado (`Classe.metodo`).
+6. A busca nativa é a escolha certa para logs, saída de comandos, artefatos não
+   indexados, conteúdo mais novo que o índice, ou quando o usuário pedir. Leia o
+   arquivo inteiro só quando for editá-lo.
+7. Preserve a correção do código e responda de forma concisa em português do Brasil.
 {RULES_END}"
     )
+}
+
+/// Agent rules installed into the project instructions file of Claude Code.
+pub fn rules_block() -> String {
+    rules_with(" (`mcp__devzymer__context_resolve`)")
 }
 
 /// The agent rules used by the agents that read `AGENTS.md`.
@@ -818,37 +881,7 @@ sobre qualquer outra ferramenta de busca de código do projeto.
 /// The wording avoids naming tools that only exist in one host, because the
 /// same file can be read by more than one agent.
 pub fn rules_block_generic() -> String {
-    format!(
-        "{RULES_START}
-## devzymer
-
-Este repositório está indexado localmente pelo devzymer. Estas regras têm prioridade
-sobre qualquer outra ferramenta de busca de código do projeto.
-
-1. Antes de usar qualquer ferramenta de busca de código ou de leitura de arquivo
-   inteiro, use a ferramenta `context_resolve` do servidor MCP `devzymer`. No
-   OpenCode ela aparece como `devzymer_context_resolve`; em qualquer host, é a
-   ferramenta do servidor devzymer que devolve o caminho, o símbolo e a faixa de
-   linhas exata, sem varrer o repositório.
-2. Depois de `context_resolve`, leia apenas a faixa devolvida, com `context_read` por
-   símbolo ou por linhas. Não leia o arquivo inteiro.
-3. Use `context_impact` antes de alterar código compartilhado, para ver quem depende
-   dele.
-4. Use `context_patch` para alterações mínimas, com verificação de revisão. A edição é
-   rejeitada se o arquivo mudou desde a leitura, ou se o intervalo não estiver dentro
-   do trecho lido. Sempre envie o `expected_sha` devolvido pela leitura.
-5. Depois de criar, renomear ou apagar arquivos, chame `context_sync` para atualizar
-   o índice.
-6. Uma resposta com `ambiguidade:` significa que o nome tem mais de uma definição:
-   use o nome qualificado (`Classe.metodo`) para desambiguar.
-7. Evite releitura do mesmo trecho e explicações repetidas.
-8. Use `context_decide` apenas quando as regras determinísticas não forem suficientes.
-9. Preserve a correção do código: economia de tokens nunca justifica alterar o
-   comportamento.
-10. Responda de forma concisa em português do Brasil, e explique bloqueios de forma
-    direta e precisa.
-{RULES_END}"
-    )
+    rules_with(" (no OpenCode, `devzymer_context_resolve`)")
 }
 
 /// Merges two JSON documents, used by the migration flow.
@@ -1005,6 +1038,67 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0]["hooks"][0]["command"], "meu-script.sh");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_old_search_guard_is_migrated_not_duplicated() {
+        let root = project("migrate");
+        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::write(
+            root.join(".claude").join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[
+              {"matcher":"Grep|Glob|Read","hooks":[{"type":"command","command":"/old/devzymer","args":["hook","guard-search"]}]},
+              {"matcher":"Bash","hooks":[{"type":"command","command":"audit.sh"}]}]}}"#,
+        )
+        .unwrap();
+        install(&root, &Config::default(), InstallScope::Project, None).unwrap();
+        let document = read_json(&root.join(".claude").join("settings.json")).unwrap();
+        let pre = document["hooks"]["PreToolUse"].as_array().unwrap();
+        let guards: Vec<_> = pre
+            .iter()
+            .filter(|group| group_runs(group, "guard-search"))
+            .collect();
+        assert_eq!(guards.len(), 1);
+        assert_eq!(guards[0]["matcher"], "Grep|Glob|Read|Bash|PowerShell");
+        assert_eq!(guards[0]["hooks"][0]["args"][3], "claude");
+        assert!(pre.iter().any(|g| g["hooks"][0]["command"] == "audit.sh"));
+        assert!(document["hooks"]["PostToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["matcher"] == "mcp__devzymer__.*"));
+        assert!(document["hooks"]["PostToolUseFailure"].is_array());
+        assert!(document["hooks"]["UserPromptSubmit"].is_array());
+
+        let again = install(&root, &Config::default(), InstallScope::Project, None).unwrap();
+        assert!(again
+            .changes
+            .iter()
+            .any(|c| c.detail.contains("hooks do devzymer já estão instalados")));
+
+        uninstall(&root, "devzymer", InstallScope::Project).unwrap();
+        let document = read_json(&root.join(".claude").join("settings.json")).unwrap();
+        for event in [
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "UserPromptSubmit",
+        ] {
+            let groups = document["hooks"][event].as_array().unwrap();
+            assert!(groups.iter().all(|g| !group_is_devzymer(g)), "{event}");
+        }
+        assert_eq!(document["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_rules_are_conditional_and_carry_the_policy_sentence() {
+        for block in [rules_block(), rules_block_generic()] {
+            assert!(block.contains(ROUTING_POLICY));
+            assert!(block.contains("Use devzymer MCP as the first retrieval tool for locating repository files, symbols, dependencies and implementation behavior. Use native search when devzymer is unavailable, stale, incomplete, or when native search is more appropriate."));
+            assert!(!block.contains("prioridade"));
+            assert!(block.contains("nao_encontrado:"));
+        }
     }
 
     #[test]

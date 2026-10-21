@@ -229,32 +229,18 @@ O Claude Code avisa quando a saída de uma ferramenta MCP ultrapassa 10.000 toke
 curtas: a expansão é solicitada, não automática. O tool schema também tem custo de contexto, e
 por isso a superfície é de seis ferramentas, não dezenas.
 
-## Guarda de busca
+## Roteamento da busca
 
-Com centenas de ferramentas MCP carregadas, o agente decide sozinho se usa o índice, e com
-frequência escolhe varrer o repositório. A regra de texto no `CLAUDE.md` reduz a decisão, mas
-não a elimina: a escolha é do modelo, e ela varia entre sessões.
+O servidor MCP não garante que o modelo o escolha. O roteamento observa as buscas nativas do
+agente e, no modo `prefer` (padrão), apenas orienta e mede. No modo `guard` (opt-in com
+`devzymer routing mode guard`), o hook redireciona **uma vez** a busca que o índice sabe
+responder, indicando `context_resolve`, e permite a repetição. Se o servidor não estiver vivo, o
+índice estiver defasado, corrompido ou de outro workspace, ou o devzymer tiver falhado, a busca
+nativa passa. Detalhes, modos, mecanismos por host e telemetria em [routing.md](routing.md).
 
-A guarda `hook guard-search` remove a variabilidade. É um hook `PreToolUse` que nega a
-varredura **apenas quando o índice sabe responder**, e indica a ferramenta que responde:
-
-| Ferramenta | Negada quando | Indicação devolvida |
-| --- | --- | --- |
-| `Grep` | o padrão contém um identificador que existe no índice | `context_resolve` com aquele termo |
-| `Read` | o arquivo está indexado | `context_read` com o caminho, que aceita faixa de linhas ou símbolo |
-| `Glob` | o padrão não tem curinga e o arquivo existe | `context_resolve` com o nome do arquivo |
-
-Uma busca por texto que não é código, um arquivo fora do índice e um padrão com curinga
-passam sem interferência. A guarda não é um bloqueador: ela redireciona para a resposta
-melhor e mais barata.
-
-O comportamento é configurável:
-
-```bash
-devzymer config set context.guard_search false
-```
-
-Sem índice, ou com a guarda desligada, o hook não nega nada.
+As descrições das ferramentas dizem quando usar cada uma, o que ela devolve, quando trocar de
+ferramenta, o que acontece em correspondência parcial e que o rótulo de confiança avalia a
+ligação, não a correção do código.
 
 ## Verificação
 

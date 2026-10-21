@@ -10,6 +10,10 @@ use devzymer_decisions::DecisionRouter;
 use devzymer_indexer::scan::ScanOptions;
 use devzymer_indexer::sync::{reconcile, reindex_paths, SyncReport};
 use devzymer_indexer::watch::Watcher;
+use devzymer_routing::health::{self, Heartbeat};
+use devzymer_routing::host::Host;
+use devzymer_routing::signals;
+use devzymer_routing::telemetry::{self, kind, observed, Event};
 use serde_json::{json, Value};
 
 use crate::tools::dispatch;
@@ -37,6 +41,7 @@ pub struct ServerState {
     /// The last excerpt delivered for each file. A patch may only address a
     /// block inside the excerpt the caller actually received.
     pub reads: Mutex<std::collections::HashMap<String, ReadRecord>>,
+    pub client: Mutex<Host>,
 }
 
 pub struct Server {
@@ -277,12 +282,13 @@ impl Server {
                     .unwrap_or_default()
                     .to_string();
                 let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
-                match dispatch(self, &name, &arguments).await {
-                    Ok(output) => Ok(output.to_json()),
-                    Err(err) => {
-                        Ok(crate::tools::ToolOutput::error(err.code(), &err.to_string()).to_json())
-                    }
-                }
+                let started = std::time::Instant::now();
+                let output = match dispatch(self, &name, &arguments).await {
+                    Ok(output) => output,
+                    Err(err) => crate::tools::ToolOutput::error(err.code(), &err.to_string()),
+                };
+                self.record_call(&name, &output.text, output.is_error, started);
+                Ok(output.to_json())
             }
             "resources/list" => Ok(json!({ "resources": [] })),
             "prompts/list" => Ok(json!({ "prompts": [] })),
@@ -312,7 +318,53 @@ impl Server {
         }
     }
 
+    fn client_host(&self) -> Host {
+        self.state
+            .client
+            .lock()
+            .map(|host| *host)
+            .unwrap_or(Host::Unknown)
+    }
+
+    fn record_call(&self, tool: &str, text: &str, is_error: bool, started: std::time::Instant) {
+        let (mode, _) = self.config.routing_mode();
+        if mode == devzymer_core::config::RoutingMode::Off {
+            return;
+        }
+        let host = self.client_host();
+        let outcome = signals::classify_text(tool, text, is_error);
+        telemetry::append(
+            &self.root,
+            &self.config.routing,
+            &Event {
+                ts: devzymer_core::util::now_millis(),
+                host: host.as_str().to_string(),
+                host_source: if host == Host::Unknown {
+                    "unknown".to_string()
+                } else {
+                    "client_info".to_string()
+                },
+                mode: mode.as_str().to_string(),
+                kind: kind::MCP_CALL.to_string(),
+                tool: tool.to_string(),
+                reason: outcome.as_str().to_string(),
+                latency_ms: Some(started.elapsed().as_millis() as u64),
+                observed: observed::SERVER.to_string(),
+                ..Event::default()
+            },
+        );
+    }
+
     fn initialize(&self, params: &Value) -> Value {
+        if let Some(name) = params
+            .get("clientInfo")
+            .and_then(|info| info.get("name"))
+            .and_then(|name| name.as_str())
+        {
+            if let Ok(mut host) = self.state.client.lock() {
+                *host = Host::from_client_name(name);
+            }
+        }
         let requested = params
             .get("protocolVersion")
             .and_then(|v| v.as_str())
@@ -331,7 +383,7 @@ impl Server {
                 "name": self.config.mcp.server_name.clone(),
                 "version": env!("CARGO_PKG_VERSION")
             },
-            "instructions": "Use context_resolve to locate symbols or files before reading. Use context_read for precise source ranges. Use context_impact before changing shared code. Use context_patch for minimal, revision checked edits. Use context_sync to refresh the index."
+            "instructions": "Local code index. Start repository discovery with context_resolve, read only the returned range with context_read, and check dependents with context_impact before changing shared code. Native search remains the right tool for logs, command output, unindexed or newer-than-index content, and when a lookup reports nao_encontrado."
         })
     }
 }
@@ -345,8 +397,53 @@ fn error_response(id: Value, code: i64, message: &str, kind: Option<&str>) -> Va
 }
 
 /// Runs the MCP server over stdio until the client closes the stream.
+fn start_heartbeat(
+    root: PathBuf,
+    config: &Config,
+    state: Arc<ServerState>,
+) -> Option<(Arc<AtomicBool>, std::thread::JoinHandle<()>)> {
+    if config.routing_mode().0 == devzymer_core::config::RoutingMode::Off {
+        return None;
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let started_ms = devzymer_core::util::now_millis();
+    let handle = std::thread::Builder::new()
+        .name("devzymer-heartbeat".to_string())
+        .spawn(move || {
+            let mut elapsed = HEARTBEAT_INTERVAL_MS;
+            while !flag.load(Ordering::Relaxed) {
+                if elapsed >= HEARTBEAT_INTERVAL_MS {
+                    elapsed = 0;
+                    let host = state
+                        .client
+                        .lock()
+                        .map(|host| *host)
+                        .unwrap_or(Host::Unknown);
+                    health::write_heartbeat(
+                        &root,
+                        &Heartbeat {
+                            pid: std::process::id(),
+                            started_ms,
+                            updated_ms: devzymer_core::util::now_millis(),
+                            host: host.as_str().to_string(),
+                        },
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                elapsed += 250;
+            }
+        })
+        .ok()?;
+    Some((stop, handle))
+}
+
+const HEARTBEAT_INTERVAL_MS: u64 = 30_000;
+
 pub async fn serve_stdio(server: Server) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let heartbeat = start_heartbeat(server.root.clone(), &server.config, server.state.clone());
 
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
@@ -364,6 +461,11 @@ pub async fn serve_stdio(server: Server) -> Result<()> {
             stdout.write_all(b"\n").await?;
             stdout.flush().await?;
         }
+    }
+    if let Some((stop, handle)) = heartbeat {
+        stop.store(true, Ordering::Relaxed);
+        let _ = handle.join();
+        health::clear_heartbeat(&server.root, std::process::id());
     }
     Ok(())
 }

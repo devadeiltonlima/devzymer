@@ -157,7 +157,8 @@ não devolve dados de outro repositório: ele falha de forma explícita.
 
 - Servidor MCP em `.mcp.json` (projeto) ou `~/.claude.json` (usuário).
 - Regras de uso em `CLAUDE.md`.
-- Hooks de compressão de saída, guarda de arquivos de teste e guarda de busca.
+- Hooks de compressão de saída, guarda de arquivos de teste e roteamento da busca (`PreToolUse`,
+  `PostToolUse`, `PostToolUseFailure` e `UserPromptSubmit`).
 - Permissão `mcp__devzymer__*` na lista `permissions.allow`, sem a qual o host rejeita toda
   chamada.
 
@@ -165,8 +166,8 @@ não devolve dados de outro repositório: ele falha de forma explícita.
 
 - Servidor MCP em `[mcp_servers.devzymer]`, com `command`, `args` e `enabled`.
 - Regras de uso em `AGENTS.md`.
-- Sem hooks: o protocolo de hooks do Claude Code não é o do Codex, e nada é instalado no lugar
-  errado.
+- Hooks de roteamento em `.codex/hooks.json`. O Codex só os executa depois de você revisá-los e
+  confiar neles em `/hooks`; até lá, vale apenas a orientação do `AGENTS.md`.
 
 A configuração do Codex é editada de forma cirúrgica, com `toml_edit`: o resto do arquivo, com
 os comentários e a formatação do usuário, permanece intacto.
@@ -175,6 +176,9 @@ os comentários e a formatação do usuário, permanece intacto.
 
 - Servidor MCP em `mcp.servers.devzymer`, do tipo `local`.
 - Regras de uso em `AGENTS.md`.
+- Plugin de roteamento em `.opencode/plugins/devzymer-routing/index.ts` (API de plugins do
+  OpenCode 2). Um arquivo de outro autor com o mesmo nome nunca é sobrescrito, e no OpenCode 1
+  o plugin não é instalado.
 
 O arquivo global pode ser `opencode.jsonc`, com comentários. Nesse caso a alteração é feita
 sobre o texto original, e o que o usuário escreveu é preservado. Servidores, plugins, modelos,

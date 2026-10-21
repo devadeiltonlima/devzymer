@@ -15,6 +15,7 @@ pub struct Config {
     pub privacy: PrivacyConfig,
     pub logging: LoggingConfig,
     pub tests: TestsConfig,
+    pub routing: RoutingConfig,
 }
 
 /// Controls the permission aware hook that guards dedicated test files.
@@ -157,7 +158,8 @@ pub struct ContextConfig {
     pub dedupe: bool,
     pub cache_enabled: bool,
     pub cache_ttl_secs: u64,
-    /// Redirects the code search of the agent to the local index.
+    /// Legacy switch of the guarded routing mode. `routing.mode` replaces it
+    /// and wins whenever it is set.
     pub guard_search: bool,
 }
 
@@ -169,7 +171,70 @@ impl Default for ContextConfig {
             dedupe: true,
             cache_enabled: true,
             cache_ttl_secs: 900,
-            guard_search: true,
+            guard_search: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutingMode {
+    Off,
+    #[default]
+    Prefer,
+    Guard,
+}
+
+impl RoutingMode {
+    pub fn parse(value: &str) -> Option<RoutingMode> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(RoutingMode::Off),
+            "prefer" => Some(RoutingMode::Prefer),
+            "guard" => Some(RoutingMode::Guard),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RoutingMode::Off => "off",
+            RoutingMode::Prefer => "prefer",
+            RoutingMode::Guard => "guard",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct RoutingConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<RoutingMode>,
+    pub max_denials_per_session: u32,
+    pub max_advisories_per_session: u32,
+    pub session_ttl_secs: u64,
+    pub health_cache_secs: u64,
+    pub heartbeat_max_age_secs: u64,
+    pub failure_window_secs: u64,
+    pub recent_use_window_secs: u64,
+    pub explicit_request_window_secs: u64,
+    pub telemetry: bool,
+    pub telemetry_max_bytes: u64,
+}
+
+impl Default for RoutingConfig {
+    fn default() -> Self {
+        Self {
+            mode: None,
+            max_denials_per_session: 6,
+            max_advisories_per_session: 3,
+            session_ttl_secs: 24 * 3600,
+            health_cache_secs: 15,
+            heartbeat_max_age_secs: 90,
+            failure_window_secs: 300,
+            recent_use_window_secs: 180,
+            explicit_request_window_secs: 900,
+            telemetry: true,
+            telemetry_max_bytes: 1_000_000,
         }
     }
 }
@@ -267,6 +332,21 @@ impl Default for LoggingConfig {
 }
 
 impl Config {
+    /// The effective routing mode and where it came from.
+    ///
+    /// `routing.mode` wins. The legacy `context.guard_search` switch only
+    /// opts into the guarded mode, and nothing restrictive is ever enabled
+    /// without one of the two being set explicitly.
+    pub fn routing_mode(&self) -> (RoutingMode, &'static str) {
+        if let Some(mode) = self.routing.mode {
+            return (mode, "routing.mode");
+        }
+        if self.context.guard_search {
+            return (RoutingMode::Guard, "context.guard_search");
+        }
+        (RoutingMode::Prefer, "default")
+    }
+
     /// Loads the effective configuration for a project: defaults, then the
     /// user level file, then the project level file.
     pub fn load(root: &Path) -> Result<Config> {

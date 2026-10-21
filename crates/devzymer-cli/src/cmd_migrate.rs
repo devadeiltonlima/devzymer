@@ -53,8 +53,16 @@ pub fn uninstall(ctx: &Ctx, scope: &str, purge: bool) -> Result<()> {
     let scope = devzymer_integrations::InstallScope::parse(scope)
         .unwrap_or(devzymer_integrations::InstallScope::Project);
 
-    let report =
+    let mut report =
         devzymer_integrations::uninstall_claude(&root, &ctx.config.mcp.server_name, scope)?;
+    for agent in [
+        devzymer_integrations::AgentKind::Codex,
+        devzymer_integrations::AgentKind::OpenCode,
+    ] {
+        let other = devzymer_integrations::uninstall_agent(&root, agent, scope)?;
+        report.changes.extend(other.changes);
+        report.backups.extend(other.backups);
+    }
 
     if purge {
         let dir = paths::project_dir(&root);

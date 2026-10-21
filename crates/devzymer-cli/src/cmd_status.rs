@@ -50,6 +50,7 @@ pub fn run(ctx: &Ctx) -> Result<()> {
     };
 
     let permission = mcp_permission(&root, &scope, &ctx.config.mcp.server_name);
+    let (routing_mode, routing_source) = ctx.config.routing_mode();
 
     let payload = serde_json::json!({
         "initialized": true,
@@ -68,7 +69,8 @@ pub fn run(ctx: &Ctx) -> Result<()> {
         "mcp_permission": permission,
         "claude_cli": workspace.claude.cli_installed,
         "codegraph_present": workspace.codegraph.present,
-        "decisions_enabled": ctx.config.decisions.enabled
+        "decisions_enabled": ctx.config.decisions.enabled,
+        "routing": { "mode": routing_mode.as_str(), "source": routing_source }
     });
 
     if ctx.json {
@@ -114,6 +116,10 @@ pub fn run(ctx: &Ctx) -> Result<()> {
         } else {
             "ausente: as chamadas são rejeitadas até `devzymer init` conceder a regra"
         }
+    );
+    println!(
+        "roteamento: modo {} ({routing_source}); detalhes em `devzymer routing status`",
+        routing_mode.as_str()
     );
     println!(
         "CodeGraph: {} | decisões externas: {}",

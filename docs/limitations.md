@@ -72,6 +72,24 @@ inválido.
 **A instalação dos hooks é no arquivo de settings do projeto.** Uma configuração de hooks
 definida em nível superior ou gerenciada pela organização continua valendo.
 
+## Roteamento
+
+**Não há imposição universal.** No Claude Code e no OpenCode 2, o modo `guard` é técnico. No
+Codex, os hooks só rodam depois da revisão em `/hooks`; sem ela, a orientação do `AGENTS.md` é
+melhor esforço. No OpenCode 1 não há plugin.
+
+**O `guard` decide pelo identificador.** Busca em linguagem natural, regex sem identificador e
+consultas fora do índice passam sem interferência. Um agente pode também usar uma ferramenta que o
+roteamento não classifica (um script que varre arquivos, por exemplo).
+
+**A frescura tem cache de 15 s.** Um arquivo salvo nesse intervalo pode ainda não contar como
+defasado. O pior caso é um redirecionamento único, e a repetição é permitida.
+
+**O batimento do servidor é por workspace.** Duas sessões no mesmo projeto compartilham o
+arquivo; o hook infere "servidor vivo" pelo batimento mais recente.
+
+**Em `prefer`, o Codex sem hooks revisados não recebe nem dicas.** Só o `AGENTS.md` vale.
+
 ## Tokens
 
 **As contagens de token são estimativas.** O estimador local usa o tokenizador o200k. O Claude

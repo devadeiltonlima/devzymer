@@ -332,6 +332,7 @@ fn install_one(
             crate::codex::install(root, scope, executable, report)?;
             if !server_only {
                 install_rules(root, scope, report, crate::codex::rules_path(root, scope))?;
+                crate::codex::install_hooks(root, scope, executable, report)?;
             }
             Ok(())
         }
@@ -343,6 +344,13 @@ fn install_one(
                     scope,
                     report,
                     crate::opencode::rules_path(root, scope),
+                )?;
+                crate::opencode::install_plugin(
+                    root,
+                    scope,
+                    executable,
+                    crate::opencode::installed_major(),
+                    report,
                 )?;
             }
             Ok(())
@@ -412,9 +420,11 @@ pub fn uninstall_agent(
         }
         AgentKind::Codex => {
             crate::codex::uninstall(root, scope, &mut report)?;
+            crate::codex::uninstall_hooks(root, scope, &mut report)?;
         }
         AgentKind::OpenCode => {
             crate::opencode::uninstall(root, scope, &mut report)?;
+            crate::opencode::uninstall_plugin(root, scope, &mut report)?;
         }
     }
     Ok(report)

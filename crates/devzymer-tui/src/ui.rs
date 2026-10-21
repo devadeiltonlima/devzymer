@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
+use crate::brand::{self, Caps};
 use crate::state::{Selection, Step};
 
 const ACCENT: Color = Color::Cyan;
@@ -13,18 +14,42 @@ const DIM: Color = Color::DarkGray;
 
 /// Desenha a interface no quadro atual.
 pub fn render(frame: &mut Frame, selection: &Selection) {
+    let plain = Caps {
+        color: false,
+        truecolor: false,
+        unicode: true,
+        animate: false,
+    };
+    render_animated(frame, selection, 0, &plain);
+}
+
+/// Desenha a interface com o banner animado quando o terminal comporta.
+pub fn render_animated(frame: &mut Frame, selection: &Selection, tick: u64, caps: &Caps) {
     let area = frame.area();
+    let wide = caps.color && usize::from(area.width) > brand::BANNER_WIDTH && area.height >= 24;
+    let brand_height = if wide {
+        (brand::BANNER_ROWS + 3) as u16
+    } else {
+        4
+    };
     let blocks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),
+            Constraint::Length(brand_height),
             Constraint::Min(6),
             Constraint::Length(3),
             Constraint::Length(2),
         ])
         .split(area);
 
-    render_brand(frame, blocks[0]);
+    if wide {
+        frame.render_widget(
+            Paragraph::new(brand::banner_lines(caps, tick)).alignment(Alignment::Center),
+            blocks[0],
+        );
+    } else {
+        render_brand(frame, blocks[0]);
+    }
     match selection.step {
         Step::Agents => render_agents(frame, blocks[1], selection),
         Step::Scope => render_scope(frame, blocks[1], selection),

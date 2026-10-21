@@ -105,6 +105,15 @@ fn workspace_root_of(path: &Path) -> Option<std::path::PathBuf> {
     project.parent().map(|root| root.to_path_buf())
 }
 
+fn workspace_mismatch(root: &Path, stored: &str) -> Error {
+    Error::WorkspaceMismatch(format!(
+        "o indice em {} pertence a outro workspace ({stored}); \
+         rode `devzymer init --root {}` para reindexar",
+        root.join(crate::paths::PROJECT_DIR).display(),
+        root.display()
+    ))
+}
+
 /// Registers the SQLite functions used by the lexical index triggers.
 fn register_sql_functions(conn: &Connection) -> Result<()> {
     conn.create_scalar_function(
@@ -138,6 +147,51 @@ impl Store {
             store.adopt_or_verify_workspace(&root)?;
         }
         Ok(store)
+    }
+
+    /// Opens an existing index without writing anything to it.
+    ///
+    /// Nothing is created, migrated or adopted: a missing file is an error, an
+    /// index of another workspace is refused, and the schema is only reported.
+    /// The routing hooks use it, because a hook must never alter an index.
+    pub fn open_read_only(path: &Path) -> Result<Store> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(Error::Database)?;
+        conn.busy_timeout(std::time::Duration::from_millis(1500))
+            .ok();
+        register_sql_functions(&conn)?;
+        let store = Store { conn };
+        if let Some(root) = workspace_root_of(path) {
+            store.verify_workspace(&root)?;
+        }
+        Ok(store)
+    }
+
+    fn verify_workspace(&self, root: &Path) -> Result<()> {
+        let expected = crate::workspace_root::workspace_id(root);
+        match self.get_meta("workspace_id")? {
+            Some(stored) if stored != expected => Err(workspace_mismatch(root, &stored)),
+            _ => Ok(()),
+        }
+    }
+
+    /// True when the schema of the index is the one this binary writes.
+    pub fn schema_is_current(&self) -> bool {
+        self.get_meta("schema_version")
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse::<u32>().ok())
+            == Some(SCHEMA_VERSION)
+    }
+
+    /// A fast structural check of the database file.
+    pub fn quick_check(&self) -> Result<String> {
+        self.conn
+            .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+            .map_err(Error::Database)
     }
 
     pub fn open_in_memory() -> Result<Store> {
@@ -180,11 +234,7 @@ impl Store {
                 Ok(())
             }
             Some(stored) if stored == expected => Ok(()),
-            Some(stored) => Err(Error::WorkspaceMismatch(format!(
-                "o indice em {} pertence a outro workspace ({stored});                  rode `devzymer init --root {}` para reindexar",
-                root.join(crate::paths::PROJECT_DIR).display(),
-                root.display()
-            ))),
+            Some(stored) => Err(workspace_mismatch(root, &stored)),
         }
     }
 

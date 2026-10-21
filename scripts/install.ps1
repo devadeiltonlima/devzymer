@@ -27,6 +27,7 @@ function Install-Devzymer {
 
     try {
         $client = New-Object System.Net.WebClient
+        $client.CachePolicy = New-Object System.Net.Cache.RequestCachePolicy([System.Net.Cache.RequestCacheLevel]::NoCacheNoStore)
         $zipPath = Join-Path $tmp $archive
         $sumPath = "$zipPath.sha256"
 

@@ -1,0 +1,19 @@
+[package]
+name = "devzymer-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Retrieval benchmarks and token accounting for devzymer"
+
+[dependencies]
+devzymer-core.workspace = true
+devzymer-search.workspace = true
+devzymer-context.workspace = true
+devzymer-graph.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+blake3.workspace = true
+tiktoken-rs.workspace = true

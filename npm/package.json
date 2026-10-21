@@ -1,0 +1,37 @@
+{
+  "name": "devzymer",
+  "version": "0.1.0",
+  "description": "devzymer: Less Tokens. More Engineering. AI coding agent context and token optimization engine.",
+  "keywords": [
+    "ai",
+    "mcp",
+    "claude-code",
+    "code-index",
+    "token-optimization",
+    "developer-tools"
+  ],
+  "license": "MIT",
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "files": [
+    "bin/",
+    "install.py",
+    "README.md"
+  ],
+  "bin": {
+    "devzymer": "bin/devzymer"
+  },
+  "scripts": {
+    "postinstall": "python3 install.py || python install.py"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

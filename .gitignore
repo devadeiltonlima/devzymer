@@ -1,0 +1,47 @@
+# Rust
+/target
+/target-verify
+/target-*
+**/*.rs.bk
+Cargo.lock.orig
+
+# Artifacts Windows
+*.pdb
+*.ilk
+*.exe
+*.dll
+
+# Bank-devzymer and databases in any folder (indexes, WAL, SHM, copies)
+/.devzymer/
+**/.devzymer/
+**/index.sqlite3
+**/index.sqlite3-wal
+**/index.sqlite3-shm
+**/*.sqlite3
+**/*.sqlite3-wal
+**/*.sqlite3-shm
+**/*.db
+
+# Secrets and credentials
+.env
+.env.*
+**/.env
+*.pem
+*.key
+*_rsa
+*_ed25519
+
+# Private logs and temporary audit data
+*.log
+/logs/
+/audit/
+/audit_ws/
+*.bkup
+.codex
+.claude
+
+
+# Local integration config (machine-specific paths)
+/.mcp.json
+/.claude/
+/.codex/

@@ -1,0 +1,16 @@
+[package]
+name = "devzymer-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Interface de terminal interativa para o instalador do devzymer."
+
+[dependencies]
+devzymer-core = { workspace = true }
+devzymer-integrations = { workspace = true }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
+serde = { workspace = true }
+serde_json = { workspace = true }

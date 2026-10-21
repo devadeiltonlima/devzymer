@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/devzymer-core",
+    "crates/devzymer-indexer",
+    "crates/devzymer-graph",
+    "crates/devzymer-search",
+    "crates/devzymer-context",
+    "crates/devzymer-decisions",
+    "crates/devzymer-mcp",
+    "crates/devzymer-integrations",
+    "crates/devzymer-tui",
+    "crates/devzymer-bench",
+    "crates/devzymer-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+devzymer-core = { path = "crates/devzymer-core" }
+devzymer-indexer = { path = "crates/devzymer-indexer" }
+devzymer-graph = { path = "crates/devzymer-graph" }
+devzymer-search = { path = "crates/devzymer-search" }
+devzymer-context = { path = "crates/devzymer-context" }
+devzymer-decisions = { path = "crates/devzymer-decisions" }
+devzymer-mcp = { path = "crates/devzymer-mcp" }
+devzymer-integrations = { path = "crates/devzymer-integrations" }
+devzymer-tui = { path = "crates/devzymer-tui" }
+devzymer-bench = { path = "crates/devzymer-bench" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.37", features = ["bundled-full"] }
+blake3 = "1"
+ignore = "0.4"
+rayon = "1"
+regex = "1"
+dirs = "6"
+notify = "8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "signal", "time", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "charset"] }
+tiktoken-rs = "0.6"
+tempfile = "3"
+tree-sitter = "0.25"
+tree-sitter-language = "0.1"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"

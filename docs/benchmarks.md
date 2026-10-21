@@ -1,6 +1,6 @@
 # Metodologia do benchmark
 
-> **Visualizador animado:** [docs/benchmark.html](benchmark.html) mostra os resultados em animação —
+> **Visualizador animado:** [benchmark animado](https://devadeiltonlima.github.io/devzymer/docs/benchmark.html) mostra os resultados em animação —
 > contexto entregue antes e depois do devzymer, precisão por repositório e o caso real que motivou o
 > motor v2.1. Abre direto no navegador, sem servidor e sem dependências externas.
 

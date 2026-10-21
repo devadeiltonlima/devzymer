@@ -147,7 +147,7 @@ devzymer benchmark --root <dir> --tasks 64 --seed 20260319 --format json
 - No repositório real, perguntas em linguagem natural acertam **4 de 9**, e o recall@1 nelas é 0,33. É o ponto mais fraco e está em [limitações](docs/limitations.md).
 - O desempate entre candidatos de mesmo nome depende da ordem física do índice; os números são determinísticos para um dado índice, mas reindexar pode mover algumas posições.
 
-**[Abra o benchmark animado](docs/benchmark.html)** (HTML autônomo, sem rede) · metodologia em [docs/benchmarks.md](docs/benchmarks.md) · medição ponta a ponta com o Claude Code em [docs/end-to-end-benchmark.md](docs/end-to-end-benchmark.md).
+**[Abra o benchmark animado](https://devadeiltonlima.github.io/devzymer/docs/benchmark.html)** (HTML autônomo, sem rede) · metodologia em [docs/benchmarks.md](docs/benchmarks.md) · medição ponta a ponta com o Claude Code em [docs/end-to-end-benchmark.md](docs/end-to-end-benchmark.md).
 
 ---
 

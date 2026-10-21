@@ -65,7 +65,8 @@ actual="$(sha256_of "$tmp/$archive")"
 
 tar -xzf "$tmp/$archive" -C "$tmp" devzymer
 mkdir -p "$INSTALL_DIR"
-install -m 755 "$tmp/devzymer" "$INSTALL_DIR/devzymer"
+install -m 755 "$tmp/devzymer" "$INSTALL_DIR/.devzymer.new"
+mv -f "$INSTALL_DIR/.devzymer.new" "$INSTALL_DIR/devzymer"
 
 printf 'devzymer: instalado em %s/devzymer\n' "$INSTALL_DIR"
 "$INSTALL_DIR/devzymer" --version || true

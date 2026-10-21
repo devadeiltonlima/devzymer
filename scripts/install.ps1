@@ -50,14 +50,29 @@ function Install-Devzymer {
         Expand-Archive -Path $zipPath -DestinationPath $extracted -Force
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
         $target = Join-Path $installDir 'devzymer.exe'
+        $source = Join-Path $extracted 'devzymer.exe'
+        $replacedRunning = $false
         try {
-            Copy-Item (Join-Path $extracted 'devzymer.exe') $target -Force
+            Copy-Item $source $target -Force
         }
         catch {
-            throw "devzymer: nao foi possivel gravar $target. Feche os agentes que estejam usando o devzymer e tente de novo"
+            $stale = "$target.old-" + (Get-Date -Format 'yyyyMMddHHmmss')
+            try {
+                Move-Item $target $stale -Force
+                Copy-Item $source $target -Force
+                $replacedRunning = $true
+            }
+            catch {
+                throw "devzymer: nao foi possivel gravar $target. Feche os agentes que estejam usando o devzymer e tente de novo"
+            }
         }
+        Get-ChildItem -Path $installDir -Filter 'devzymer.exe.old-*' -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
 
         Write-Host "devzymer: instalado em $target"
+        if ($replacedRunning) {
+            Write-Host 'devzymer: a versao anterior estava em uso e foi substituida. Reinicie os agentes (Claude Code, Codex, OpenCode) para usar a nova.'
+        }
         & $target --version
 
         if (-not $env:DEVZYMER_NO_MODIFY_PATH) {

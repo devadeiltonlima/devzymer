@@ -16,7 +16,7 @@
 </p>
 
 > [!WARNING]
-> **Alpha (v0.1.2).** Há binário pronto para **Windows x64** (testado), **Linux x64 e arm64** (compilam e instalam, mas ainda não foram executados em um Linux real) e **nenhum para macOS** (até lá, [compile do código](#instalação)). Foi exercitado de ponta a ponta com o Claude Code; Codex e OpenCode foram testados só com fixtures. Perguntas em linguagem natural ainda erram com frequência (veja [Benchmarks](#benchmarks) e [limitações](docs/limitations.md)). Relatos de falhas são bem-vindos nas [issues](https://github.com/devadeiltonlima/devzymer/issues).
+> **Alpha (v0.1.3).** Há binário pronto para **Windows x64** (testado), **Linux x64 e arm64** (compilam e instalam, mas ainda não foram executados em um Linux real) e **nenhum para macOS** (até lá, [compile do código](#instalação)). Foi exercitado de ponta a ponta com o Claude Code, o Codex e o OpenCode reais, no Windows. Perguntas em linguagem natural ainda erram com frequência (veja [Benchmarks](#benchmarks) e [limitações](docs/limitations.md)). Relatos de falhas são bem-vindos nas [issues](https://github.com/devadeiltonlima/devzymer/issues).
 
 O devzymer indexa o seu repositório localmente e entrega ao agente de código (Claude Code, Codex, OpenCode) **o arquivo, o símbolo e a faixa de linhas exata**, em vez de deixá-lo rodar `grep` e abrir arquivos inteiros.
 
@@ -204,7 +204,7 @@ quando necessário. Se o checksum não confere, nada é instalado.
 
 | Variável | Efeito |
 |---|---|
-| `DEVZYMER_VERSION` | versão a instalar, por exemplo `v0.1.2` (padrão: a última) |
+| `DEVZYMER_VERSION` | versão a instalar, por exemplo `v0.1.3` (padrão: a última) |
 | `DEVZYMER_INSTALL_DIR` | pasta de destino |
 | `DEVZYMER_NO_MODIFY_PATH` | `1` para não alterar o `PATH` (só Windows) |
 | `DEVZYMER_REPO` | `devadeiltonlima/devzymer`, para instalar de um fork |

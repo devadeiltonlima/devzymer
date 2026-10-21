@@ -104,6 +104,24 @@ fn repair(ctx: &Ctx, root: &std::path::Path) -> Result<()> {
             outcome.detail
         );
     }
+    // The skill and the instructions follow the devzymer that is running now:
+    // what the user did not touch is updated, what they edited is kept.
+    let files = devzymer_integrations::setup::prepare(root, &configured, true);
+    for item in &files.items {
+        println!(
+            "[{}] {}: {}",
+            if item.action == "skipped" {
+                "✗"
+            } else {
+                "✓"
+            },
+            item.path,
+            item.detail
+        );
+    }
+    for warning in &files.warnings {
+        println!("aviso: {warning}");
+    }
     Ok(())
 }
 

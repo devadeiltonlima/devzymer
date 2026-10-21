@@ -1117,6 +1117,24 @@ impl Store {
         Ok(result)
     }
 
+    /// Checks the full text index against the rows it was built from.
+    ///
+    /// `PRAGMA integrity_check` only walks the b-trees. The FTS5 command also
+    /// compares the index with the content, so a damaged lexical index is
+    /// reported instead of silently returning wrong results.
+    pub fn fts_integrity_check(&self) -> Result<()> {
+        if !self.fts_available() {
+            return Err(Error::Other("a tabela symbol_fts não existe".to_string()));
+        }
+        self.conn
+            .execute(
+                "INSERT INTO symbol_fts(symbol_fts) VALUES('integrity-check')",
+                [],
+            )
+            .map(|_| ())
+            .map_err(Error::Database)
+    }
+
     pub fn fts_available(&self) -> bool {
         self.conn
             .query_row(
@@ -1606,6 +1624,35 @@ mod tests {
         assert!(!hits.is_empty(), "the lexical index must return a match");
         let resolved = store.symbol_by_id(&hits[0].0).unwrap().unwrap();
         assert_eq!(resolved.name, "validate_session");
+    }
+
+    #[test]
+    fn a_damaged_lexical_index_is_reported_by_the_fts_check() {
+        let store = Store::open_in_memory().unwrap();
+        let record = FileRecord {
+            id: 0,
+            path: "src/lib.rs".into(),
+            language: Language::Rust,
+            size_bytes: 120,
+            mtime_ms: 1000,
+            content_hash: "abc".into(),
+            symbol_count: 1,
+            indexed_at_ms: 2000,
+        };
+        let file_id = store.upsert_file(&record).unwrap();
+        store
+            .replace_symbols(file_id, &[symbol("validate_session", "src/lib.rs")])
+            .unwrap();
+        assert!(store.fts_integrity_check().is_ok());
+
+        store
+            .conn
+            .execute("DELETE FROM symbol_fts_docsize", [])
+            .unwrap();
+        assert!(
+            store.fts_integrity_check().is_err(),
+            "a lexical index that no longer matches its rows must not pass"
+        );
     }
 
     #[test]

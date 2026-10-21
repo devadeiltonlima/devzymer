@@ -62,7 +62,19 @@ pub fn install(
     scope: InstallScope,
     command: Option<PathBuf>,
 ) -> Result<InstallReport> {
-    install_with(root, config, scope, command, false)
+    install_with(root, config, scope, command, false, true)
+}
+
+/// Installs the MCP registration, the permissions and the hooks, leaving the
+/// instructions file alone. Used when the caller prepares the project
+/// instructions itself, or the user asked not to have them written.
+pub fn install_without_rules(
+    root: &Path,
+    config: &Config,
+    scope: InstallScope,
+    command: Option<PathBuf>,
+) -> Result<InstallReport> {
+    install_with(root, config, scope, command, false, false)
 }
 
 /// Installs only the MCP registration, leaving the rules and the hooks
@@ -74,7 +86,7 @@ pub fn install_server(
     scope: InstallScope,
     command: Option<PathBuf>,
 ) -> Result<InstallReport> {
-    install_with(root, config, scope, command, true)
+    install_with(root, config, scope, command, true, false)
 }
 
 fn install_with(
@@ -83,6 +95,7 @@ fn install_with(
     scope: InstallScope,
     command: Option<PathBuf>,
     server_only: bool,
+    rules: bool,
 ) -> Result<InstallReport> {
     let executable = match command {
         Some(path) => path,
@@ -143,7 +156,9 @@ fn install_with(
     ensure_gitignore(root, &mut report)?;
 
     if !server_only {
-        install_rules(&rules_path, root, &mut report)?;
+        if rules {
+            install_rules(&rules_path, root, &mut report)?;
+        }
         install_hooks(root, &executable, &settings_dir, &mut report)?;
     }
 
@@ -246,44 +261,49 @@ where
 }
 
 pub fn install_rules(rules_path: &Path, root: &Path, report: &mut InstallReport) -> Result<()> {
-    let target = rules_path.to_path_buf();
-    let rules = rules_block();
-    let existing = std::fs::read_to_string(&target).unwrap_or_default();
+    write_rules_block(rules_path, root, &rules_block(), report)
+}
 
-    // The old block is removed and the new one goes first, so the rules take
-    // precedence over the instructions of any other indexing tool configured
-    // in the project.
-    let mut without = existing.clone();
-    if let Some(start) = without.find(RULES_START) {
-        let end = without
-            .find(RULES_END)
-            .map(|e| e + RULES_END.len())
-            .unwrap_or(without.len());
-        without = format!("{}{}", &without[..start], &without[end..]);
-    }
-    let mut updated = rules.clone();
-    if !updated.ends_with("\n\n") {
-        updated.push('\n');
-    }
-    updated.push_str(without.trim_start_matches('\n'));
+/// Writes the managed block into an instructions file.
+///
+/// Only the text between the markers is ever replaced. A block that is
+/// missing is appended, so the user's own instructions keep their place, and
+/// markers that cannot be paired leave the file untouched.
+pub(crate) fn write_rules_block(
+    target: &Path,
+    root: &Path,
+    block: &str,
+    report: &mut InstallReport,
+) -> Result<()> {
+    use crate::instructions::{plan_block, write_file_atomic, BlockAction};
 
-    if updated == existing {
-        report.changes.push(Change {
-            file: target.display().to_string(),
-            action: "unchanged".into(),
-            detail: "as regras do devzymer já estão instaladas".into(),
-        });
-        return Ok(());
+    let existing = match std::fs::read(target) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(devzymer_core::Error::io(target, e)),
+    };
+    let plan = plan_block(existing.as_deref(), block);
+    for warning in &plan.warnings {
+        report
+            .warnings
+            .push(format!("{}: {warning}", target.display()));
     }
-
-    if !existing.is_empty() {
-        backup_file(root, &target, report)?;
+    let (action, detail) = match plan.action {
+        BlockAction::Unchanged => ("unchanged", "as regras do devzymer já estão instaladas"),
+        BlockAction::Skipped => ("skipped", "marcadores malformados; arquivo não alterado"),
+        _ => ("updated", "regras de uso do devzymer instaladas"),
+    };
+    if plan.writes() {
+        if existing.is_some() {
+            backup_file(root, target, report)?;
+        }
+        write_file_atomic(target, &plan.content)
+            .map_err(|e| devzymer_core::Error::io(target, e))?;
     }
-    write_atomic(&target, updated.as_bytes())?;
     report.changes.push(Change {
         file: target.display().to_string(),
-        action: "updated".into(),
-        detail: "regras de uso do devzymer instaladas".into(),
+        action: action.into(),
+        detail: detail.into(),
     });
     Ok(())
 }
@@ -713,16 +733,9 @@ fn remove_rules(rules_path: &Path, root: &Path, report: &mut InstallReport) -> R
         return Ok(());
     }
     let existing = std::fs::read_to_string(&target)?;
-    if !existing.contains(RULES_START) || !existing.contains(RULES_END) {
+    let Some(updated) = crate::instructions::remove_block(&existing) else {
         return Ok(());
-    }
-    let start = existing.find(RULES_START).unwrap_or(0);
-    let end = existing
-        .find(RULES_END)
-        .map(|e| e + RULES_END.len())
-        .unwrap_or(existing.len());
-    let mut updated = existing[..start].to_string();
-    updated.push_str(existing[end..].trim_start_matches('\n'));
+    };
     backup_file(root, &target, report)?;
     write_atomic(&target, updated.as_bytes())?;
     report.changes.push(Change {
@@ -844,36 +857,9 @@ pub(crate) fn backup_file(root: &Path, target: &Path, report: &mut InstallReport
 /// The sentence every instructions file carries, verbatim.
 pub const ROUTING_POLICY: &str = "Use devzymer MCP as the first retrieval tool for locating repository files, symbols, dependencies and implementation behavior. Use native search when devzymer is unavailable, stale, incomplete, or when native search is more appropriate.";
 
-fn rules_with(tool_note: &str) -> String {
-    format!(
-        "{RULES_START}
-## devzymer
-
-Este repositório está indexado localmente pelo devzymer.
-
-{ROUTING_POLICY}
-
-1. Para localizar arquivo, símbolo, dependência ou comportamento, comece por
-   `context_resolve`{tool_note}: ele devolve caminho, símbolo e faixa de linhas sem
-   varrer o repositório. Depois leia só a faixa, com `context_read`.
-2. Use `context_impact` antes de alterar código compartilhado, para ver quem depende
-   dele.
-3. Use `context_patch` para alterações mínimas. Envie o `expected_sha` da leitura; a
-   edição é rejeitada se o arquivo mudou ou se o intervalo não estiver no trecho lido.
-4. Depois de criar, renomear ou apagar arquivos, chame `context_sync`.
-5. `nao_encontrado:` não prova ausência: confirme com busca nativa. `ambiguidade:`
-   pede o nome qualificado (`Classe.metodo`).
-6. A busca nativa é a escolha certa para logs, saída de comandos, artefatos não
-   indexados, conteúdo mais novo que o índice, ou quando o usuário pedir. Leia o
-   arquivo inteiro só quando for editá-lo.
-7. Preserve a correção do código e responda de forma concisa em português do Brasil.
-{RULES_END}"
-    )
-}
-
 /// Agent rules installed into the project instructions file of Claude Code.
 pub fn rules_block() -> String {
-    rules_with(" (`mcp__devzymer__context_resolve`)")
+    crate::instructions::claude_block()
 }
 
 /// The agent rules used by the agents that read `AGENTS.md`.
@@ -881,7 +867,7 @@ pub fn rules_block() -> String {
 /// The wording avoids naming tools that only exist in one host, because the
 /// same file can be read by more than one agent.
 pub fn rules_block_generic() -> String {
-    rules_with(" (no OpenCode, `devzymer_context_resolve`)")
+    crate::instructions::agents_block()
 }
 
 /// Merges two JSON documents, used by the migration flow.

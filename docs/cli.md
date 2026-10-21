@@ -15,23 +15,38 @@ muda para inglês técnico, mantendo os códigos de erro estáveis.
 
 ## `devzymer init`
 
-Detecta o ambiente, indexa o repositório, constrói o grafo, instala a integração com os agentes
-escolhidos e verifica o resultado.
+Detecta o ambiente, indexa o repositório, constrói o grafo e **verifica o índice**. Só depois
+disso prepara os arquivos do agente no projeto (instruções e skill) e registra o servidor MCP nos
+agentes escolhidos. Pode ser repetido sem efeito colateral.
 
 ```bash
 devzymer init                 # abre a interface de seleção de agentes
-devzymer init --dry-run       # só detecta, não escreve nada
-devzymer init --full          # reindexa tudo, ignorando o cache incremental
-devzymer init --no-integrate  # indexa sem tocar em .mcp.json, CLAUDE.md ou settings
-devzymer init --scope user    # registra o servidor em todos os projetos e hosts
+devzymer init --dry-run       # só detecta e mostra o plano, não escreve nada
+devzymer init --root ./projeto   # raiz explícita
 devzymer init --agents claude,codex,opencode   # escolha pela linha de comando
 devzymer init --yes           # não abre a interface interativa
+devzymer init --full          # reindexa tudo, ignorando o cache incremental
+devzymer init --no-agent-setup   # não grava CLAUDE.md, AGENTS.md nem a skill
+devzymer init --no-integrate  # indexa sem registrar agentes e sem arquivos do agente
+devzymer init --repair        # reaplica os arquivos do agente; guarda um índice danificado e reconstrói
+devzymer init --scope user    # registra o servidor em todos os projetos e hosts
 ```
 
-`--agents` aceita `claude`, `codex` e `opencode`, separados por vírgula. Sem terminal
-interativo, ou com `--yes`, o comando integra apenas o Claude Code e avisa sobre a alternativa.
-A interface e as opções de escopo estão em
-[docs/installation.md](installation.md).
+| Opção | Efeito |
+| --- | --- |
+| `--agents <lista>` | `claude`, `codex` e `opencode`, separados por vírgula. Define onde o servidor MCP é registrado **e** quais arquivos do projeto são preparados |
+| `--no-agent-setup` | Não grava `CLAUDE.md`, `AGENTS.md` nem a skill. O registro do servidor, a permissão e os hooks seguem as outras opções |
+| `--no-integrate` | Não registra agentes e não grava nada para eles, arquivos do projeto incluídos |
+| `--repair` | Autoriza guardar ao lado (sem apagar) um índice danificado ou de outro workspace e reconstruí-lo; reaplica os arquivos do agente |
+| `--dry-run` | Mostra a detecção e o plano dos arquivos do agente, sem gravar |
+
+Sem `--agents` e sem terminal interativo (ou com `--yes`), o servidor MCP é registrado apenas no
+Claude Code, como sempre, e os arquivos do projeto cobrem os três agentes. A interface e as
+opções de escopo estão em [docs/installation.md](installation.md).
+
+**Raiz do projeto.** O `init` nunca escolhe a pasta do usuário (nem um ancestral dela, nem a raiz
+de um disco) por descoberta automática: nesses casos ele recusa e pede `--root <pasta>`
+explícito. Um diretório sem marcadores de projeto continua aceito quando é onde você está.
 
 **Escopos de instalação**
 
@@ -41,23 +56,51 @@ A interface e as opções de escopo estão em
 | `local` | `~/.claude.json`, na chave do projeto | Só nesta máquina, só neste projeto |
 | `user` | `~/.claude.json`, na raiz | Em todos os projetos, inclusive na extensão do VS Code, sem aprovação por projeto |
 
-Etapas:
+Os arquivos do agente são **sempre locais ao projeto**. Nada em `~/.claude`, `~/.codex` ou na
+configuração global do OpenCode é alterado sem `--scope user`.
+
+Etapas, nesta ordem:
 
 1. **Descoberta** — sistema operacional, raiz do repositório, worktrees e repositórios aninhados,
    linguagens, gerenciadores de pacote, configuração existente do Claude Code, integrações MCP
    existentes, instalações do CodeGraph.
-2. **Varredura** — respeita `.gitignore`, `.ignore` e `.devzymerignore`; ignora binários,
+2. **Inspeção do índice existente** — um índice que não abre, falha na verificação do SQLite,
+   tem o índice lexical FTS5 inconsistente ou pertence a outro workspace **não é sobrescrito**:
+   o comando para com uma mensagem e nada é alterado. `--repair` guarda o arquivo ao lado
+   (`index.sqlite3.corrupt-<carimbo>`) e reconstrói.
+3. **Varredura** — respeita `.gitignore`, `.ignore` e `.devzymerignore`; ignora binários,
    arquivos acima do limite de tamanho e artefatos de build. Links simbólicos não saem do
    workspace.
-3. **Análise estrutural** — extração de símbolos por Tree-sitter, com fallback heurístico nas
-   linguagens sem gramática.
-4. **Análise semântica** — resolução de importações e arestas do grafo.
-5. **Construção do índice** — arquivos, caminhos, símbolos, assinaturas, conteúdo lexical,
-   relações, localizações, hashes e revisão.
-6. **Persistência** — SQLite transacional com migrações e FTS5.
-7. **Integração** — servidor MCP, regras de agente, hooks, permissão das ferramentas e proteção
-   do índice no `.gitignore`, de forma aditiva e idempotente.
-8. **Verificação** — busca real, integridade do banco e handshake MCP executado de verdade.
+4. **Análise estrutural e semântica** — símbolos por Tree-sitter (com fallback heurístico),
+   importações e arestas do grafo.
+5. **Construção do índice** — SQLite transacional com migrações e FTS5. Um índice novo, ou
+   feito por um parser anterior, é relido por completo; só então `indexed_parser_version` passa
+   a registrar o parser atual. Um índice antigo nunca é rotulado como atual sem ser relido.
+6. **Verificação** — integridade do banco, consistência do FTS5, busca real e handshake MCP
+   executado de verdade.
+7. **Arquivos do agente** — só se a verificação passou. `CLAUDE.md`, `AGENTS.md` e a skill
+   `devzymer` (veja [agent-skill.md](agent-skill.md)).
+8. **Registro dos agentes** — servidor MCP, permissão das ferramentas, hooks de roteamento e
+   proteção do índice no `.gitignore`, de forma aditiva e idempotente.
+
+O estágio atingido fica em `.devzymer/init-state.json` (`indexing`, `indexed`, `verified`,
+`agent_files`, `complete`). Se o `init` for interrompido, `devzymer doctor` diz até onde foi e o
+que fazer; os arquivos do agente nunca existem sem que o índice tenha sido verificado.
+
+**Arquivos do agente**
+
+| Arquivo | Agentes | Conteúdo |
+| --- | --- | --- |
+| `CLAUDE.md` | Claude Code | Bloco curto entre `<!-- devzymer:start -->` e `<!-- devzymer:end -->` |
+| `AGENTS.md` | Codex, OpenCode | O mesmo bloco, com os nomes de ferramenta dos dois hosts |
+| `.claude/skills/devzymer/` | Claude Code | A skill, com referências |
+| `.agents/skills/devzymer/` | Codex, OpenCode | A mesma skill |
+
+Só o texto entre os marcadores é do devzymer. O que está fora nunca é reescrito; um bloco ausente
+é acrescentado ao fim; um bloco antigo é atualizado no mesmo lugar; blocos duplicados viram um;
+marcadores malformados deixam o arquivo como está e o `init` avisa. Quebras de linha (CRLF/LF) e
+BOM são preservados, e a escrita é atômica. Se você escreveu uma instrução que parece contrariar
+o devzymer ("nunca use o devzymer", "sempre use grep"), ela é mantida e apontada no relatório.
 
 O índice local é um arquivo SQLite específico da máquina. Em um repositório git, o `init`
 acrescenta `.devzymer/` ao `.gitignore`, para que ele não entre no histórico. A entrada não é
@@ -70,10 +113,16 @@ implementado: índice criado em .\.devzymer\index.sqlite3
   arquivos: 85 indexados, 0 inalterados, 0 removidos, 1 ignorados
   símbolos: 802
   grafo: 2285 relações (1483 chamadas, 0 importações)
-validado: busca=true | banco=true | mcp=true
+arquivos do agente:
+  [✓] CLAUDE.md: criado
+  [✓] AGENTS.md: criado
+  [✓] .claude/skills/devzymer: criado
+  [✓] .agents/skills/devzymer: criado
+validado: busca=true | banco=true | fts5=true | mcp=true | parser=true
 ```
 
-`--dry-run` não escreve nada e serve para inspecionar o que seria indexado.
+`--dry-run` não escreve nada e serve para inspecionar o que seria indexado e quais arquivos do
+agente seriam criados ou alterados.
 
 ---
 

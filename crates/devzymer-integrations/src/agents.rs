@@ -264,6 +264,22 @@ pub fn install(
     executable: &Path,
     server_only: bool,
 ) -> Result<Vec<AgentOutcome>> {
+    install_with_rules(root, config, agents, scope, executable, server_only, true)
+}
+
+/// Como [`install`], com controle sobre as instruções do agente.
+///
+/// Com `rules` falso, o arquivo de instruções não é escrito; o registro do
+/// servidor, as permissões e os hooks seguem as demais opções.
+pub fn install_with_rules(
+    root: &Path,
+    config: &devzymer_core::config::Config,
+    agents: &[AgentKind],
+    scope: InstallScope,
+    executable: &Path,
+    server_only: bool,
+    rules: bool,
+) -> Result<Vec<AgentOutcome>> {
     let mut out = Vec::new();
     for agent in agents {
         let mut report = InstallReport {
@@ -279,6 +295,7 @@ pub fn install(
             scope,
             executable,
             server_only,
+            rules,
             &mut report,
         ) {
             Ok(()) => {
@@ -310,6 +327,7 @@ pub fn install(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn install_one(
     root: &Path,
     config: &devzymer_core::config::Config,
@@ -317,12 +335,20 @@ fn install_one(
     scope: InstallScope,
     executable: &Path,
     server_only: bool,
+    rules: bool,
     report: &mut InstallReport,
 ) -> Result<()> {
     match agent {
         AgentKind::Claude => {
             if server_only {
                 crate::claude::install_server(root, config, scope, Some(executable.to_path_buf()))?;
+            } else if !rules {
+                crate::claude::install_without_rules(
+                    root,
+                    config,
+                    scope,
+                    Some(executable.to_path_buf()),
+                )?;
             } else {
                 crate::claude::install(root, config, scope, Some(executable.to_path_buf()))?;
             }
@@ -331,7 +357,9 @@ fn install_one(
         AgentKind::Codex => {
             crate::codex::install(root, scope, executable, report)?;
             if !server_only {
-                install_rules(root, scope, report, crate::codex::rules_path(root, scope))?;
+                if rules {
+                    install_rules(root, scope, report, crate::codex::rules_path(root, scope))?;
+                }
                 crate::codex::install_hooks(root, scope, executable, report)?;
             }
             Ok(())
@@ -339,12 +367,14 @@ fn install_one(
         AgentKind::OpenCode => {
             crate::opencode::install(root, scope, executable, report)?;
             if !server_only {
-                install_rules(
-                    root,
-                    scope,
-                    report,
-                    crate::opencode::rules_path(root, scope),
-                )?;
+                if rules {
+                    install_rules(
+                        root,
+                        scope,
+                        report,
+                        crate::opencode::rules_path(root, scope),
+                    )?;
+                }
                 crate::opencode::install_plugin(
                     root,
                     scope,
@@ -365,42 +395,9 @@ fn install_rules(
     report: &mut InstallReport,
     target: PathBuf,
 ) -> Result<()> {
-    let rules = crate::claude::rules_block_generic();
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let existing = std::fs::read_to_string(&target).unwrap_or_default();
-    let updated = if existing.contains(crate::claude::RULES_START)
-        && existing.contains(crate::claude::RULES_END)
-    {
-        let start = existing.find(crate::claude::RULES_START).unwrap_or(0);
-        let end = existing
-            .find(crate::claude::RULES_END)
-            .map(|e| e + crate::claude::RULES_END.len())
-            .unwrap_or(existing.len());
-        format!("{}{}{}", &existing[..start], rules, &existing[end..])
-    } else {
-        format!("{rules}\n\n{existing}")
-    };
-    if updated == existing {
-        report.changes.push(Change {
-            file: target.display().to_string(),
-            action: "unchanged".into(),
-            detail: "regras do devzymer já instaladas".into(),
-        });
-        return Ok(());
-    }
-    crate::claude::backup_file(root, &target, report)?;
-    devzymer_core::config::write_atomic(&target, updated.as_bytes())?;
-    report.changes.push(Change {
-        file: target.display().to_string(),
-        action: "updated".into(),
-        detail: format!(
-            "regras de uso do devzymer instaladas no escopo {}",
-            scope.display()
-        ),
-    });
-    Ok(())
+    let _ = scope;
+    crate::claude::write_rules_block(&target, root, &crate::claude::rules_block_generic(), report)
+        .map_err(anyhow::Error::from)
 }
 
 /// Remove a integração do devzymer de um agente.

@@ -11,6 +11,7 @@ mod cmd_serve;
 mod cmd_status;
 mod cmd_update;
 mod cmd_watch;
+mod init_state;
 mod routing_hook;
 
 use std::path::{Path, PathBuf};
@@ -47,12 +48,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Inicializa o índice, o grafo e a integração com o Claude Code.
+    /// Inicializa o índice, o grafo, as instruções e a skill do projeto e a integração com os agentes.
     Init {
         /// Reindexa tudo, ignorando o cache incremental.
         #[arg(long)]
         full: bool,
-        /// Não instala a integração com o Claude Code.
+        /// Não registra o servidor MCP nem grava nada para os agentes (arquivos do
+        /// projeto incluídos).
         #[arg(long)]
         no_integrate: bool,
         /// Apenas detecta o ambiente, sem escrever nada.
@@ -73,6 +75,14 @@ enum Command {
         /// Não abre a interface interativa.
         #[arg(long)]
         yes: bool,
+        /// Não grava CLAUDE.md, AGENTS.md nem a skill do projeto. O registro do
+        /// servidor MCP e os hooks seguem as outras opções.
+        #[arg(long)]
+        no_agent_setup: bool,
+        /// Reaplica os arquivos do agente e, se o índice estiver danificado,
+        /// guarda-o ao lado (sem apagar) e reconstrói um novo.
+        #[arg(long)]
+        repair: bool,
     },
     /// Mostra cobertura, atualidade e estado da integração.
     Status,
@@ -358,6 +368,21 @@ fn run() -> Result<()> {
         }
     };
 
+    // Automatic discovery never lands on the user home or a filesystem root:
+    // initializing there would index unrelated personal files. An explicit
+    // `--root` is the way to ask for such a directory.
+    if matches!(command, Command::Init { .. })
+        && cli.root.is_none()
+        && devzymer_core::workspace_root::is_broad(&root)
+    {
+        return Err(anyhow::Error::new(devzymer_core::Error::WorkspaceTooBroad(
+            format!(
+                "{} é a pasta do usuário ou um ancestral dela; o devzymer não inicializa                  projetos por descoberta automática nesse diretório. Entre na pasta do                  projeto ou use `devzymer init --root <pasta>`",
+                root.display()
+            ),
+        )));
+    }
+
     let mut config = Config::load(&root).unwrap_or_default();
     if cli.verbose {
         config.logging.level = "debug".to_string();
@@ -381,6 +406,8 @@ fn run() -> Result<()> {
                 server_only,
                 agents,
                 yes,
+                no_agent_setup,
+                repair,
             } => {
                 cmd_init::run(
                     &ctx,
@@ -392,6 +419,8 @@ fn run() -> Result<()> {
                         server_only,
                         agents,
                         yes,
+                        no_agent_setup,
+                        repair,
                     },
                 )
                 .await

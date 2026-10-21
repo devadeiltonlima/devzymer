@@ -257,9 +257,11 @@ O `init` já faz isto. Por agente:
 
 | Agente | O que é instalado |
 |---|---|
-| **Claude Code** | servidor MCP (`.mcp.json`), **permissão** das ferramentas `mcp__devzymer__*`, regras (`CLAUDE.md`) e os hooks `guard-search`, `note-mcp`, `note-prompt`, `guard-test-files` e `post-tool-use` |
-| **Codex** | servidor MCP (`.codex/config.toml`), regras (`AGENTS.md`) e hooks de roteamento (`.codex/hooks.json`, ativos só depois da revisão em `/hooks`) |
-| **OpenCode** | servidor MCP (`opencode.json`), regras (`AGENTS.md`) e o plugin de roteamento (OpenCode 2), preservando comentários do seu `opencode.jsonc` |
+| **Claude Code** | servidor MCP (`.mcp.json`), **permissão** das ferramentas `mcp__devzymer__*`, regras (`CLAUDE.md`), a **skill `devzymer`** (`.claude/skills/devzymer/`) e os hooks `guard-search`, `note-mcp`, `note-prompt`, `guard-test-files` e `post-tool-use` |
+| **Codex** | servidor MCP (`.codex/config.toml`), regras (`AGENTS.md`), a **skill `devzymer`** (`.agents/skills/devzymer/`) e hooks de roteamento (`.codex/hooks.json`, ativos só depois da revisão em `/hooks`) |
+| **OpenCode** | servidor MCP (`opencode.json`), regras (`AGENTS.md`), a **skill `devzymer`** (`.agents/skills/devzymer/`) e o plugin de roteamento (OpenCode 2), preservando comentários do seu `opencode.jsonc` |
+
+As regras e a skill ficam no projeto, em blocos e arquivos que o devzymer reconhece como seus: o que você escreveu, ou editou, nunca é substituído ([detalhes da skill](docs/agent-skill.md)).
 
 Sem a permissão, o Claude Code rejeita cada chamada com `you haven't granted it yet`, e o agente volta a varrer o repositório por conta própria; por isso o instalador a concede no escopo registrado. No modo `guard` (opt-in), o roteamento nega a busca nativa **somente quando o índice sabe responder** e nunca nega a mesma busca duas vezes.
 

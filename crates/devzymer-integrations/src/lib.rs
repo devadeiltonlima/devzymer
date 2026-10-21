@@ -4,14 +4,17 @@ pub mod agents;
 pub mod claude;
 pub mod codegraph;
 pub mod codex;
+pub mod instructions;
 pub mod jsonc;
 pub mod migrate;
 pub mod opencode;
 pub mod routing;
+pub mod setup;
+pub mod skill;
 
 pub use agents::{
-    detect, detect_one, install, probe_server, uninstall_agent, AgentDetection, AgentKind,
-    AgentOutcome, AgentStatus,
+    detect, detect_one, install, install_with_rules, probe_server, uninstall_agent, AgentDetection,
+    AgentKind, AgentOutcome, AgentStatus,
 };
 pub use claude::{install as install_claude, install_server, uninstall as uninstall_claude};
 pub use claude::{InstallReport, InstallScope};

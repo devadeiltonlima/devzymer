@@ -64,6 +64,14 @@ pub fn uninstall(ctx: &Ctx, scope: &str, purge: bool) -> Result<()> {
         report.backups.extend(other.backups);
     }
 
+    // The project files belong to the project scope only. A user scope
+    // uninstall never reaches into the current directory.
+    if scope != devzymer_integrations::InstallScope::User {
+        report
+            .changes
+            .extend(devzymer_integrations::setup::uninstall(&root));
+    }
+
     if purge {
         let dir = paths::project_dir(&root);
         if dir.exists() {

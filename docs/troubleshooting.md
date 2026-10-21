@@ -173,3 +173,11 @@ recusa de revisão obsoleta e o limite de workspace. Ambos falam com o binário 
 | O OpenCode não carrega o servidor | `opencode.json` ficou com JSON inválido | `devzymer doctor` e o arquivo; o backup está em `.devzymer/backups/` |
 | As regras do Codex e do OpenCode colidem | Os dois leem `AGENTS.md` no projeto | O bloco é o mesmo e é escrito uma única vez, com marcadores |
 | O agente consulta outro repositório | O servidor foi iniciado fora do projeto | `devzymer doctor` mostra a raiz; use `--root` |
+| `init` recusa: "é a pasta do usuário" | O diretório atual é a home (ou um ancestral); o `init` não escolhe isso por descoberta automática | Entre na pasta do projeto, ou `devzymer init --root <pasta>` |
+| `init` recusa: "o índice existente não pôde ser usado" | Banco ilegível, FTS5 inconsistente ou índice de outro workspace. Nada foi alterado | `devzymer init --repair` guarda o arquivo ao lado (`index.sqlite3.corrupt-<carimbo>`) e reconstrói; nada é apagado |
+| `init` avisa "pode conflitar com o devzymer" | Uma instrução sua em `CLAUDE.md`/`AGENTS.md` (por exemplo "nunca use o devzymer") vai contra o bloco gerenciado | O texto é mantido e só apontado. Decida qual vale e ajuste o seu |
+| `init` avisa "marcadores malformados" | Falta o `<!-- devzymer:start -->` ou o `<!-- devzymer:end -->` no arquivo | O arquivo não foi tocado. Corrija ou remova o marcador e rode `devzymer init` |
+| Skill "foi alterado depois da instalação" | Você editou um arquivo da skill; ele é seu e não é substituído | Para receber a versão atual, mova ou remova o arquivo e rode `devzymer init --repair` |
+| `doctor` diz que a inicialização está parcial | O `init` foi interrompido (estágio em `.devzymer/init-state.json`) | `devzymer init --repair` conclui as etapas que faltam |
+| O agente não usa a skill | A skill existe, mas o carregamento é da sessão do agente | Abra uma sessão nova; confira que `devzymer` aparece nas skills do agente; invoque-a pelo nome |
+| Codex: "MCP tool call requires approval" em `codex exec` | A execução não interativa tem política de aprovação `never` | Em sessão interativa o Codex pergunta; em automação, configure a aprovação do servidor no seu `config.toml` |

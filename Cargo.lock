@@ -704,6 +704,7 @@ name = "devzymer-integrations"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "blake3",
  "devzymer-core",
  "serde",
  "serde_json",
